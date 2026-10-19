@@ -1256,9 +1256,19 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             <div id="share" style="display:grid; gap:12px"></div>
           </section>
 
+          <section class="card wide">
+            <div class="card-head">
+              <span class="label">6 · Piccoli contro grandi</span>
+              <h2>Chi fa più visualizzazioni di quanti iscritti ha</h2>
+              <p>Ogni pallino è un canale: a destra quanti iscritti ha, in alto quante visualizzazioni fa di solito su questo argomento. Sopra la riga, il canale fa più visualizzazioni degli iscritti che ha.</p>
+            </div>
+            <div class="legend"><span><i class="round"></i>Sopra la riga (sovraperforma)</span><span><i class="round old"></i>Sotto la riga</span></div>
+            <div class="chart" id="chart-scatter-canali"></div>
+          </section>
+
           <section class="card compact-card">
             <div class="card-head">
-              <span class="label">6 · Piccoli canali</span>
+              <span class="label">7 · Piccoli canali</span>
               <h2>Video con molte più visualizzazioni che iscritti</h2>
               <p>"×10" vuol dire che il video ha 10 volte le visualizzazioni rispetto agli iscritti del canale.</p>
             </div>
@@ -1267,11 +1277,21 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
           <section class="card compact-card">
             <div class="card-head">
-              <span class="label">7 · Canali nuovi</span>
+              <span class="label">8 · Canali nuovi</span>
               <h2>Canali aperti negli ultimi 3 mesi</h2>
               <p>Se ci sono canali nuovi che vanno bene, puoi partire da zero anche tu.</p>
             </div>
             <div id="newch" style="display:grid; gap:12px"></div>
+          </section>
+
+          <section class="card">
+            <div class="card-head">
+              <span class="label">9 · Canali nuovi nel tempo</span>
+              <h2>Quanti canali nuovi ci provano ogni settimana</h2>
+              <p>Quanti canali aperti da poco hanno pubblicato il loro primo Short su questo argomento. Se cresce, l'argomento sta attirando sempre più gente nuova.</p>
+            </div>
+            <div class="chart" id="chart-weeks-new"></div>
+            <p class="big-line" id="weeks-new-text"></p>
           </section>
         </div>
 
@@ -1283,7 +1303,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         <div class="charts">
           <section class="card wide">
             <div class="card-head">
-              <span class="label">8 · Funziona sempre o è fortuna?</span>
+              <span class="label">10 · Funziona sempre o è fortuna?</span>
               <h2>Gli Shorts dei canali che ci hanno provato più volte</h2>
               <p>Ogni riga è un canale con almeno 3 Shorts su questo argomento, ogni pallino è uno Short. Se i pallini pieni (sopra la media) sono tanti, il successo si ripete.</p>
             </div>
@@ -1293,7 +1313,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
           <section class="card">
             <div class="card-head">
-              <span class="label">9 · Percentuale di "colpi"</span>
+              <span class="label">11 · Percentuale di "colpi"</span>
               <h2>Quante probabilità ci sono di fare il botto</h2>
               <p>Su tutti gli Shorts più pertinenti, quanti superano queste soglie di visualizzazioni.</p>
             </div>
@@ -1302,7 +1322,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
           <section class="card">
             <div class="card-head">
-              <span class="label">10 · Durata migliore</span>
+              <span class="label">12 · Durata migliore</span>
               <h2>Quanto deve durare il tuo Short</h2>
               <p>Visualizzazioni tipiche per ogni durata. La colonna piena è la durata che funziona meglio.</p>
             </div>
@@ -1312,7 +1332,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
           <section class="card">
             <div class="card-head">
-              <span class="label">11 · Formato del titolo</span>
+              <span class="label">13 · Formato del titolo</span>
               <h2>Le parole dei titoli che funzionano</h2>
             </div>
             <div id="formats" style="display:grid; gap:10px"></div>
@@ -1320,13 +1340,24 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
           <section class="card">
             <div class="card-head">
-              <span class="label">12 · Coinvolgimento</span>
+              <span class="label">14 · Coinvolgimento</span>
               <h2>Quanto il pubblico partecipa</h2>
               <p>Like e commenti ogni 1.000 visualizzazioni: più sono alti, più il pubblico è appassionato.</p>
             </div>
             <div id="engagement" style="display:grid; gap:12px"></div>
           </section>
         </div>
+
+        <section class="card" id="varianti-card">
+          <div class="card-head">
+            <span class="label">Altri argomenti da provare</span>
+            <h2>Cos'altro classificano questi canali</h2>
+            <p>Guardo gli altri Shorts di classifica degli stessi canali trovati in questa ricerca, per scoprire argomenti simili che già funzionano per loro. Conto solo un argomento se lo stesso canale lo ha fatto almeno 2 volte.
+              Costa in più circa 1 credito per ogni canale controllato (fino a <b id="varianti-costo-stima">20</b> crediti), e lo faccio solo quando premi il pulsante.</p>
+          </div>
+          <div><button id="varianti-btn" class="shimmer" type="button">Trova varianti</button></div>
+          <div id="varianti-risultato"></div>
+        </section>
 
         <section class="card">
           <div class="table-head">
@@ -1816,6 +1847,29 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       });
       return conta.map((n, i) => ({ n, inizio: new Date(ora - (12 - i) * 7 * GIORNO), recente: i >= 8 }));
     }
+    function settimaneCanaliNuovi(video) {
+      const ora = oraAnalisi;
+      const N = Math.ceil(GIORNI_NUOVO / 7);   // stesse settimane della regola "canale nuovo" (91 giorni = 13 settimane)
+      const conta = new Array(N).fill(0);
+      perCanale(video).forEach((c) => {
+        if (c.nato == null) return;
+        const sett = Math.floor((ora - c.nato) / (7 * GIORNO));
+        if (sett >= 0 && sett < N) conta[N - 1 - sett]++;
+      });
+      return conta.map((n, i) => ({ n, inizio: new Date(ora - (N - i) * 7 * GIORNO), recente: i >= N - 4 }));
+    }
+    function testoCanaliNuoviTempo(sett) {
+      const tot = sett.reduce((a, s) => a + s.n, 0);
+      const N = sett.length, recentiN = Math.min(4, N);
+      if (!tot) return 'Nessun canale nuovo ha pubblicato il suo primo Short su questo argomento nelle ultime ' + N + ' settimane.';
+      const soggetto = tot === 1 ? 'canale nuovo ha' : 'canali nuovi hanno', possessivo = tot === 1 ? 'il suo' : 'il loro';
+      const recenti = sett.slice(N - recentiN).reduce((a, s) => a + s.n, 0);
+      const prima = sett.slice(0, N - recentiN).reduce((a, s) => a + s.n, 0);
+      const perSettimanaPrima = prima / Math.max(1, N - recentiN), perSettimanaRecenti = recenti / recentiN;
+      const giudizio = prima < 2 ? '' : perSettimanaRecenti > perSettimanaPrima * 1.2 ? ' Negli ultimi tempi ne arrivano di più: l\'argomento sta attirando gente nuova.'
+        : perSettimanaRecenti < perSettimanaPrima * 0.8 ? ' Negli ultimi tempi ne arrivano di meno rispetto a prima.' : '';
+      return nf.format(tot) + ' ' + soggetto + ' pubblicato ' + possessivo + ' primo Short su questo argomento nelle ultime ' + N + ' settimane.' + giudizio;
+    }
     function calcolaSegnali(video, sett) {
       const segnali = [];
 
@@ -1944,6 +1998,59 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         return { c, suoi, sopra, costante: sopra * 2 >= suoi.length };
       }).sort((a, b) => b.suoi.length - a.suoi.length || b.c.views - a.c.views);
       return { soglia, righe, costanti: righe.filter((r) => r.costante).length };
+    }
+
+    // Piccoli contro grandi: iscritti di ogni canale confrontati con quanto fa di solito su questo argomento
+    function piccoliControGrandi(video) {
+      return perCanale(video).filter((c) => c.iscritti != null && c.iscritti > 0).map((c) => {
+        const views = video.filter((v) => v.canaleId === c.id).map((v) => v.views);
+        const tipico = mediana(views);
+        return Object.assign({}, c, { tipico, rapporto: tipico / c.iscritti });
+      });
+    }
+    function graficoPiccoliGrandi(box, video) {
+      box.replaceChildren();
+      const dati = piccoliControGrandi(video);
+      if (dati.length < 5) {
+        box.append(paragrafo('Troppo pochi canali con iscritti visibili per questo grafico. Prova la ricerca "Profonda".', 'empty-chart'));
+        return;
+      }
+      const sopra = dati.filter((c) => c.rapporto >= 1).length;
+      const riga = document.createElement('p'); riga.className = 'big-line';
+      const b = document.createElement('b'); b.textContent = sopra + ' su ' + dati.length;
+      riga.append(b, ' canali fanno di solito più visualizzazioni di quanti iscritti hanno.');
+      box.append(riga);
+
+      const W = Math.max(280, box.clientWidth), H = 320;
+      const m = { t: 12, r: 16, b: 30, l: 50 };
+      const iw = W - m.l - m.r, ih = H - m.t - m.b;
+      const valori = dati.flatMap((c) => [c.iscritti, c.tipico]).filter((n) => n > 0);
+      const lo = Math.floor(Math.log10(Math.min(...valori)));
+      const hi = Math.max(lo + 1, Math.ceil(Math.log10(Math.max(...valori))));
+      const x = (v) => m.l + ((Math.log10(Math.max(1, v)) - lo) / (hi - lo)) * iw;
+      const y = (v) => m.t + ih - ((Math.log10(Math.max(1, v)) - lo) / (hi - lo)) * ih;
+      const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', 'aria-label': 'Iscritti e visualizzazioni tipiche di ogni canale' }, box);
+      const passo = hi - lo > 5 ? 2 : 1;
+      for (let p = lo; p <= hi; p += passo) {
+        el('line', { x1: m.l, x2: W - m.r, y1: y(Math.pow(10, p)), y2: y(Math.pow(10, p)), class: 'grid' }, svg);
+        testo(svg, m.l - 6, y(Math.pow(10, p)) + 4, compatto(Math.pow(10, p)), { 'text-anchor': 'end' });
+        el('line', { x1: x(Math.pow(10, p)), x2: x(Math.pow(10, p)), y1: m.t, y2: m.t + ih, class: 'grid' }, svg);
+        testo(svg, x(Math.pow(10, p)), H - 8, compatto(Math.pow(10, p)), { 'text-anchor': 'middle' });
+      }
+      el('line', { x1: x(Math.pow(10, lo)), x2: x(Math.pow(10, hi)), y1: y(Math.pow(10, lo)), y2: y(Math.pow(10, hi)), class: 'mark-line' }, svg);
+
+      [...dati].sort((a, b2) => a.rapporto - b2.rapporto).forEach((c) => {   // i migliori sopra, restano visibili
+        const cx = x(c.iscritti), cy = y(c.tipico);
+        const link = el('a', { href: 'https://www.youtube.com/channel/' + encodeURIComponent(c.id), target: '_blank', rel: 'noopener' }, svg);
+        const hit = el('circle', { cx, cy, r: 11, class: 'hit', tabindex: 0 }, link);
+        el('circle', { cx, cy, r: 5, class: 'dot' + (c.rapporto >= 1 ? '' : ' old'), stroke: 'var(--surface)', 'stroke-width': 1.5 }, link);
+        const info = (e) => mostraTip(e, compatto(c.tipico) + ' visualizzazioni tipiche', [c.nome,
+          compatto(c.iscritti) + ' iscritti · ' + (c.rapporto >= 1 ? '×' + nf1.format(c.rapporto) + ' gli iscritti' : nf1.format(c.rapporto) + ' volte gli iscritti')]);
+        hit.addEventListener('pointermove', info);
+        hit.addEventListener('focus', info);
+        hit.addEventListener('pointerleave', nascondiTip);
+        hit.addEventListener('blur', nascondiTip);
+      });
     }
 
     // 9. Si sta saturando? Confronto gli ultimi 3 mesi con i 3 mesi prima (senza gli Shorts degli ultimi 7 giorni)
@@ -2099,6 +2206,92 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       return { q, righe: tenute.slice(0, 8) };
     }
 
+    // ---------- Altri argomenti da provare: cosa classificano anche gli stessi canali ----------
+    const MAX_CANALI_VARIANTI = 20;   // quanti canali controllo al massimo (e quindi crediti massimi: 1 a canale)
+    const MIN_RIPETUTO_VARIANTE = 2;  // conto un argomento solo se lo stesso canale l'ha fatto almeno 2 volte
+    function stemmaParola(w) { return w.length > 5 ? w.slice(0, 5) : w; }
+    function canaliPerVarianti(video) {
+      return perCanale(video).sort((a, b) => b.shorts - a.shorts || b.views - a.views).slice(0, MAX_CANALI_VARIANTI);
+    }
+    async function trovaVarianti() {
+      const btn = $('varianti-btn');
+      const box = $('varianti-risultato');
+      const canali = canaliPerVarianti(videoAttuali);
+      if (canali.length < 3) {
+        box.replaceChildren(paragrafo('Troppo pochi canali diversi in questa ricerca per questo confronto.', 'empty-chart'));
+        return;
+      }
+      btn.disabled = true;
+      const prima = creditiUsati();
+      const escludiNicchia = new Set([...tokenTitolo(ricercaAttuale), ...parole(ricercaAttuale).map(stemmaParola)]);
+      const perStem = new Map();   // stem -> { originale, canali, occorrenze }
+      let controllati = 0, conDati = 0, erroreGrave = null;
+      for (const c of canali) {
+        box.replaceChildren(paragrafo('Controllo cos\'altro classifica ' + c.nome + '… (' + (controllati + 1) + ' di ' + canali.length + ')', 'muted'));
+        let titoli = [];
+        try {
+          const d = await chiama('playlistItems', {
+            part: 'snippet', playlistId: 'UUSH' + c.id.slice(2), maxResults: 50, fields: 'items/snippet/title',
+          }, 1);
+          titoli = (d.items || []).map((it) => decodifica(it.snippet.title)).filter(haRank);
+        } catch (e) {
+          if (/crediti|chiave|API/i.test(e.message)) { erroreGrave = e.message; controllati++; break; }
+        }
+        controllati++;
+        if (!titoli.length) continue;
+        conDati++;
+        const conteggioCanale = new Map();   // stem -> { originale, n }
+        titoli.forEach((t) => {
+          tokenTitolo(t).forEach((w) => {
+            if (w.length < 3 || /^\d+$/.test(w) || PAROLE_TITOLO_VUOTE.has(w) || PAROLE_VUOTE.has(w) || escludiNicchia.has(w)) return;
+            const stem = stemmaParola(w);
+            if (escludiNicchia.has(stem)) return;
+            const r = conteggioCanale.get(stem) || { originale: w, n: 0 };
+            r.n++; conteggioCanale.set(stem, r);
+          });
+        });
+        conteggioCanale.forEach((r, stem) => {
+          if (r.n < MIN_RIPETUTO_VARIANTE) return;
+          const tot = perStem.get(stem) || { originale: r.originale, canali: 0, occorrenze: 0 };
+          tot.canali++; tot.occorrenze += r.n;
+          perStem.set(stem, tot);
+        });
+      }
+      const righe = [...perStem.values()]
+        .filter((r) => r.canali >= 2)
+        .map((r) => Object.assign(r, { media: r.occorrenze / r.canali }))
+        .sort((a, b) => b.canali - a.canali || b.media - a.media)
+        .slice(0, 8);
+      disegnaVarianti(righe, controllati, conDati, nf.format(creditiUsati() - prima), erroreGrave);
+      btn.disabled = false;
+    }
+    function disegnaVarianti(righe, totale, conDati, crediti, errore) {
+      const box = $('varianti-risultato');
+      box.replaceChildren();
+      box.append(paragrafo('Controllati ' + totale + ' canali (' + conDati + ' avevano altri Shorts di classifiche da guardare) · ' + crediti + ' crediti usati.' +
+        (errore ? ' Mi sono fermato prima della fine: ' + errore : ''), 'muted'));
+      if (!righe.length) {
+        box.append(paragrafo('Non ho trovato altri argomenti che tornano spesso tra questi canali. Prova con un argomento diverso o una ricerca "Profonda".', 'empty-chart'));
+        return;
+      }
+      box.append(paragrafo('Questi canali classificano spesso anche:', 'label'));
+      const ol = document.createElement('ol'); ol.className = 'rank formats';
+      const max = righe[0].canali;
+      righe.forEach((r) => {
+        const li = document.createElement('li');
+        const div = document.createElement('div');
+        const t = document.createElement('span'); t.className = 't'; t.textContent = r.originale.charAt(0).toUpperCase() + r.originale.slice(1);
+        const x = document.createElement('span'); x.className = 'x num'; x.textContent = r.canali + ' canali su ' + totale;
+        const tr = document.createElement('span'); tr.className = 'track';
+        const bar = document.createElement('span'); bar.style.width = Math.max(4, r.canali / max * 100) + '%'; tr.append(bar);
+        const c = document.createElement('span'); c.className = 'c';
+        c.textContent = 'In media ' + nf1.format(r.media) + ' Shorts a testa su questo argomento.';
+        div.append(t, x, tr, c); li.append(div); ol.append(li);
+      });
+      box.append(ol);
+    }
+    $('varianti-btn').addEventListener('click', trovaVarianti);
+
     // 13. Coinvolgimento: like e commenti ogni 1.000 visualizzazioni
     function coinvolgimento(video) {
       const ok = video.filter((v) => v.views >= 1000 && v.likes != null);
@@ -2196,13 +2389,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     }
 
     // ---------- Grafico 1: colonne per settimana ----------
-    function graficoSettimane(box, sett) {
+    function graficoSettimane(box, sett, etichetta) {
       box.replaceChildren();
       const W = Math.max(280, box.clientWidth), H = 220;
       const m = { t: 22, r: 4, b: 26, l: 30 };
       const iw = W - m.l - m.r, ih = H - m.t - m.b;
       const max = scalaBella(Math.max(...sett.map((s) => s.n), 1));
-      const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', 'aria-label': 'Video usciti per settimana' }, box);
+      const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', 'aria-label': etichetta || 'Video usciti per settimana' }, box);
       const y = (v) => m.t + ih - (v / max) * ih;
 
       [0, max / 2, max].forEach((v) => {
@@ -2958,6 +3151,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const copia = $('results').firstElementChild.cloneNode(true);
       copia.querySelector('#save-bar').remove();
       copia.querySelectorAll('.actions, .table-head + p, #filtro-elenco, #tf-conta, #r-rifai').forEach((n) => n.remove());
+      const vBox = copia.querySelector('#varianti-risultato');
+      if (vBox && vBox.children.length) { const vBtn = copia.querySelector('#varianti-btn'); if (vBtn) vBtn.remove(); }
+      else { const vCard = copia.querySelector('#varianti-card'); if (vCard) vCard.remove(); }
 
       // il trend lo salvo per tutti e tre i periodi (giorni, settimane, mesi):
       // nel file se ne vede uno alla volta e i pulsanti passano da uno all'altro
@@ -3064,17 +3260,22 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
     // ---------- Disegno di tutto ----------
     let settimaneAttuali = [];
+    let settimaneNuoviAttuali = [];
     function disegnaGrafici() {
       if (!videoAttuali.length) return;
       graficoSettimane($('chart-weeks'), settimaneAttuali);
       graficoVelocita($('chart-speed'), videoAttuali);
       graficoFasce($('chart-size'), videoAttuali);
       mostraTrend(videoAttuali);
+      graficoPiccoliGrandi($('chart-scatter-canali'), videoAttuali);
       graficoCostanza($('consistency'), videoAttuali);
       graficoDurata($('chart-duration'), $('duration-text'), videoAttuali);
+      graficoSettimane($('chart-weeks-new'), settimaneNuoviAttuali, 'Canali nuovi per settimana');
+      $('weeks-new-text').textContent = testoCanaliNuoviTempo(settimaneNuoviAttuali);
     }
     function mostraRisultati() {
       settimaneAttuali = settimane(videoAttuali);
+      settimaneNuoviAttuali = settimaneCanaliNuovi(videoAttuali);
       $('intro').hidden = true;
       $('results').hidden = false;
       const viral = calcolaSegnali(videoAttuali, settimaneAttuali);
@@ -3124,6 +3325,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         nf.format(videoOriginali.length) + ' Shorts trovati in origine (dopo aver tolto gli altri con il filtro). Per tornare a tutti gli Shorts premi "↺ Mostra di nuovo tutti gli Shorts" sotto l\'elenco.';
       mostraNumeriRicerca();
       tabella();
+      $('varianti-risultato').replaceChildren();
+      $('varianti-btn').disabled = false;
+      $('varianti-costo-stima').textContent = Math.min(MAX_CANALI_VARIANTI, new Set(videoAttuali.map((v) => v.canaleId)).size);
       faiComparire(document.querySelectorAll('#results .verdict, #results .thermo, #results #trend, #results .charts > .card, #results > div > .card:last-child'));
     }
 

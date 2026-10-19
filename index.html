@@ -393,6 +393,7 @@
     }
     .ricerca-banner p { color: var(--muted); font-size: .92rem; }
     .ricerca-banner p::first-letter { text-transform: uppercase; }
+    .ricerca-banner #r-rifai { justify-self: start; margin-top: 6px; white-space: normal; text-align: left; }
     #save-title { display: none; }
     .c-head h2 { font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: -0.02em; }
     /* Preferite */
@@ -1118,6 +1119,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <span class="label">Ricerca</span>
           <h1 id="r-termine"></h1>
           <p id="r-quando"></p>
+          <button id="r-rifai" class="btn-light" type="button" hidden>↻ Rifai con dati aggiornati</button>
         </section>
         <p class="msg info" id="ricalcolo-avviso" hidden></p>
         <div class="save-bar" id="save-bar">
@@ -2955,7 +2957,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const ora = new Date();
       const copia = $('results').firstElementChild.cloneNode(true);
       copia.querySelector('#save-bar').remove();
-      copia.querySelectorAll('.actions, .table-head + p, #filtro-elenco, #tf-conta').forEach((n) => n.remove());
+      copia.querySelectorAll('.actions, .table-head + p, #filtro-elenco, #tf-conta, #r-rifai').forEach((n) => n.remove());
 
       // il trend lo salvo per tutti e tre i periodi (giorni, settimane, mesi):
       // nel file se ne vede uno alla volta e i pulsanti passano da uno all'altro
@@ -3110,6 +3112,12 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         quando.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' alle ' +
         quando.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) +
         (livelloRicerca && LIVELLI[livelloRicerca] ? ' · ricerca ' + LIVELLI[livelloRicerca].nome : '');
+      const rifaiBtn = $('r-rifai');
+      rifaiBtn.hidden = origineRicerca !== 'db';
+      if (origineRicerca === 'db') {
+        const livRifai = LIVELLI[livelloRicerca] ? livelloRicerca : 'normale';
+        rifaiBtn.textContent = '↻ Rifai con dati aggiornati (' + LIVELLI[livRifai].nome + ' · ' + nf.format(costoLivello(livRifai)) + ' crediti)';
+      }
       const avviso = $('ricalcolo-avviso');
       avviso.hidden = !ricalcolato;
       if (ricalcolato) avviso.textContent = 'Questi numeri sono ricalcolati solo su ' + nf.format(videoAttuali.length) + ' dei ' +
@@ -3195,22 +3203,20 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       messaggio('Chiave cancellata.', 'info');
     });
 
-    $('search-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const termine = $('search-input').value.trim();
-      if (!termine) return;
+    // Cerca su YouTube e mostra i risultati; la usano sia il modulo "Analizza" sia il pulsante "Rifai con dati aggiornati"
+    async function eseguiRicerca(termine) {
+      if (!termine) return false;
       if (!chiave) {
         $('key-box').open = true;
         messaggio('Prima incolla la tua chiave YouTube qui sopra e premi Salva.', 'error');
-        return;
+        return false;
       }
-      $('search-btn').disabled = true;
       try {
         const momento = Date.now();
         const video = await analizza(termine, momento);
         if (!video.length) {
           messaggio('Non ho trovato Shorts con "rank" o "ranking" nel titolo per "' + termine + '". Prova con altre parole.', 'info');
-          return;
+          return false;
         }
         videoAttuali = video;
         videoOriginali = video;
@@ -3229,12 +3235,38 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         mostraRisultati();
         if (dbSessione && $('db-auto').checked) salvaInDb();
         else $('db-save').hidden = !dbSessione;
+        return true;
       } catch (err) {
         messaggio(err.message, 'error');
-      } finally {
-        $('search-btn').disabled = false;
+        return false;
       }
+    }
+    $('search-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const termine = $('search-input').value.trim();
+      if (!termine) return;
+      $('search-btn').disabled = true;
+      try { await eseguiRicerca(termine); } finally { $('search-btn').disabled = false; }
     });
+
+    // Rifai subito, dalla pagina dei risultati, una ricerca aperta dal database: stessa nicchia, stessa profondità, dati di oggi
+    async function rifaiRicercaAggiornata() {
+      const termine = ricercaAttuale;
+      const livelloVoluto = LIVELLI[livelloRicerca] ? livelloRicerca : 'normale';
+      const precedente = livello;
+      const testoPrima = $('r-rifai').textContent;
+      livello = livelloVoluto;
+      $('r-rifai').disabled = true;
+      $('r-rifai').textContent = 'Rifaccio la ricerca…';
+      try {
+        await eseguiRicerca(termine);
+      } finally {
+        livello = precedente;
+        $('r-rifai').disabled = false;
+        $('r-rifai').textContent = testoPrima;
+      }
+    }
+    $('r-rifai').addEventListener('click', rifaiRicercaAggiornata);
 
 
     document.querySelectorAll('#results th button').forEach((b) => b.addEventListener('click', () => {

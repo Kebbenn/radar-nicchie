@@ -299,6 +299,9 @@
     .rank.formats .t { font-weight: 600; min-width: 0; white-space: normal; }
     .rank.formats .es { grid-column: 1 / -1; font-size: .8rem; color: var(--g1); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .rank.formats .es:hover { text-decoration: underline; }
+    .rank.formats .es-variante { grid-column: 1 / -1; justify-self: start; margin-top: 4px; font-size: .82rem; padding: 7px 12px; }
+    .variante-dettagli { margin: 2px 0 10px; }
+    .variante-dettagli .c-tabella { min-width: 560px; font-size: .85rem; }
 
     /* Piè di pagina */
     .foot { display: grid; gap: 6px; padding: 8px 4px 0; border-top: 1px solid var(--line); font-size: .8rem; color: var(--muted); }
@@ -2236,42 +2239,48 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       btn.disabled = true;
       const prima = creditiUsati();
       const escludiNicchia = new Set([...tokenTitolo(ricercaAttuale), ...parole(ricercaAttuale).map(stemmaParola)]);
-      const perStem = new Map();   // stem -> { originale, canali, occorrenze }
+      const perStem = new Map();   // stem -> { originale, canali: Set, righe: [{id,titolo,thumb,data,canale,iscritti}] }
       let controllati = 0, conDati = 0, erroreGrave = null;
       for (const c of canali) {
         box.replaceChildren(paragrafo('Controllo cos\'altro classifica ' + c.nome + '… (' + (controllati + 1) + ' di ' + canali.length + ')', 'muted'));
-        let titoli = [];
+        let video = [];
         try {
           const d = await chiama('playlistItems', {
-            part: 'snippet', playlistId: 'UUSH' + c.id.slice(2), maxResults: 50, fields: 'items/snippet/title',
+            part: 'snippet', playlistId: 'UUSH' + c.id.slice(2), maxResults: 50,
+            fields: 'items/snippet(title,publishedAt,resourceId/videoId,thumbnails/medium/url)',
           }, 1);
-          titoli = (d.items || []).map((it) => decodifica(it.snippet.title)).filter(haRank);
+          video = (d.items || []).map((it) => ({
+            id: it.snippet.resourceId.videoId, titolo: decodifica(it.snippet.title),
+            thumb: it.snippet.thumbnails && it.snippet.thumbnails.medium ? it.snippet.thumbnails.medium.url : '',
+            data: it.snippet.publishedAt ? Date.parse(it.snippet.publishedAt) : null,
+          })).filter((v) => haRank(v.titolo));
         } catch (e) {
           if (/crediti|chiave|API/i.test(e.message)) { erroreGrave = e.message; controllati++; break; }
         }
         controllati++;
-        if (!titoli.length) continue;
+        if (!video.length) continue;
         conDati++;
-        const conteggioCanale = new Map();   // stem -> { originale, n }
-        titoli.forEach((t) => {
-          tokenTitolo(t).forEach((w) => {
+        const perCanaleStem = new Map();   // stem -> { originale, righe }
+        video.forEach((v) => {
+          [...new Set(tokenTitolo(v.titolo))].forEach((w) => {
             if (w.length < 3 || /^\d+$/.test(w) || PAROLE_TITOLO_VUOTE.has(w) || PAROLE_VUOTE.has(w) || escludiNicchia.has(w)) return;
             const stem = stemmaParola(w);
             if (escludiNicchia.has(stem)) return;
-            const r = conteggioCanale.get(stem) || { originale: w, n: 0 };
-            r.n++; conteggioCanale.set(stem, r);
+            const r = perCanaleStem.get(stem) || { originale: w, righe: [] };
+            r.righe.push(v); perCanaleStem.set(stem, r);
           });
         });
-        conteggioCanale.forEach((r, stem) => {
-          if (r.n < MIN_RIPETUTO_VARIANTE) return;
-          const tot = perStem.get(stem) || { originale: r.originale, canali: 0, occorrenze: 0 };
-          tot.canali++; tot.occorrenze += r.n;
+        perCanaleStem.forEach((r, stem) => {
+          if (r.righe.length < MIN_RIPETUTO_VARIANTE) return;
+          const tot = perStem.get(stem) || { originale: r.originale, canali: new Set(), righe: [] };
+          tot.canali.add(c.id);
+          r.righe.forEach((v) => tot.righe.push(Object.assign({}, v, { canale: c.nome, iscritti: c.iscritti })));
           perStem.set(stem, tot);
         });
       }
       const righe = [...perStem.values()]
-        .filter((r) => r.canali >= 2)
-        .map((r) => Object.assign(r, { media: r.occorrenze / r.canali }))
+        .filter((r) => r.canali.size >= 2)
+        .map((r) => ({ originale: r.originale, canali: r.canali.size, righe: r.righe, media: r.righe.length / r.canali.size }))
         .sort((a, b) => b.canali - a.canali || b.media - a.media)
         .slice(0, 8);
       disegnaVarianti(righe, controllati, conDati, nf.format(creditiUsati() - prima), erroreGrave);
@@ -2298,9 +2307,71 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const bar = document.createElement('span'); bar.style.width = Math.max(4, r.canali / max * 100) + '%'; tr.append(bar);
         const c = document.createElement('span'); c.className = 'c';
         c.textContent = 'In media ' + nf1.format(r.media) + ' Shorts a testa su questo argomento.';
-        div.append(t, x, tr, c); li.append(div); ol.append(li);
+        const espandi = document.createElement('button'); espandi.type = 'button'; espandi.className = 'btn-light es-variante';
+        const nCredAttesi = Math.ceil(r.righe.length / 50);
+        const testoChiuso = 'Mostra i ' + r.righe.length + (r.righe.length === 1 ? ' Short' : ' Shorts') + ' (circa ' + nCredAttesi + ' credit' + (nCredAttesi === 1 ? 'o' : 'i') + ')';
+        espandi.textContent = testoChiuso;
+        const dettagli = document.createElement('div'); dettagli.className = 'variante-dettagli'; dettagli.hidden = true;
+        espandi.addEventListener('click', () => espandiVariante(r, espandi, dettagli, testoChiuso));
+        div.append(t, x, tr, c, espandi); li.append(div, dettagli); ol.append(li);
       });
       box.append(ol);
+    }
+    async function espandiVariante(r, btn, box, testoChiuso) {
+      if (box.dataset.caricato) {
+        box.hidden = !box.hidden;
+        btn.textContent = box.hidden ? testoChiuso : 'Nascondi questi Shorts';
+        return;
+      }
+      btn.disabled = true;
+      const prima = creditiUsati();
+      try {
+        const ids = [...new Set(r.righe.map((v) => v.id))];
+        const views = new Map();
+        for (const gruppo of aGruppi(ids, 50)) {
+          const d = await chiama('videos', { part: 'statistics', id: gruppo.join(','), fields: 'items(id,statistics/viewCount)' }, 1);
+          (d.items || []).forEach((it) => views.set(it.id, it.statistics && it.statistics.viewCount != null ? +it.statistics.viewCount : null));
+        }
+        const conViste = r.righe.map((v) => Object.assign({}, v, { views: views.has(v.id) ? views.get(v.id) : null }));
+        disegnaDettaglioVariante(box, conViste);
+        box.dataset.caricato = '1';
+        box.hidden = false;
+        const nUsati = creditiUsati() - prima;
+        btn.textContent = 'Nascondi questi Shorts (' + nf.format(nUsati) + (nUsati === 1 ? ' credito usato)' : ' crediti usati)');
+      } catch (e) {
+        box.replaceChildren(paragrafo(e.message, 'error'));
+        box.hidden = false;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    function disegnaDettaglioVariante(box, righe) {
+      box.replaceChildren();
+      const ordinate = [...righe].sort((a, b) => (b.views == null ? -1 : b.views) - (a.views == null ? -1 : a.views));
+      const tabella = document.createElement('table'); tabella.className = 'c-tabella';
+      const thead = document.createElement('thead'); const trh = document.createElement('tr');
+      ['Short', 'Canale', 'Iscritti', 'Visualizzazioni', 'Uscito'].forEach((t, i) => {
+        const th = document.createElement('th'); if (i >= 2) th.className = 'r'; th.textContent = t; trh.append(th);
+      });
+      thead.append(trh); tabella.append(thead);
+      const tbody = document.createElement('tbody');
+      ordinate.forEach((v) => {
+        const tr = document.createElement('tr');
+        const td0 = document.createElement('td');
+        const vid = document.createElement('div'); vid.className = 'vid';
+        const img = document.createElement('img'); img.src = v.thumb || ''; img.alt = ''; img.loading = 'lazy';
+        const a = document.createElement('a'); a.href = linkVideo(v.id); a.target = '_blank'; a.rel = 'noopener'; a.textContent = v.titolo;
+        vid.append(img, a); td0.append(vid); tr.append(td0);
+        const tdC = document.createElement('td'); tdC.textContent = v.canale; tr.append(tdC);
+        const tdI = document.createElement('td'); tdI.className = 'r num'; tdI.textContent = v.iscritti != null ? compatto(v.iscritti) : '—'; tr.append(tdI);
+        const tdV = document.createElement('td'); tdV.className = 'r num'; tdV.textContent = v.views != null ? compatto(v.views) : '—'; tr.append(tdV);
+        const tdD = document.createElement('td'); tdD.className = 'r'; tdD.textContent = v.data ? dataBreve(new Date(v.data)) + ' ' + new Date(v.data).getFullYear() : '—'; tr.append(tdD);
+        tbody.append(tr);
+      });
+      tabella.append(tbody);
+      const scorri = document.createElement('div'); scorri.className = 'table-box';
+      scorri.append(tabella);
+      box.append(scorri);
     }
     $('varianti-btn').addEventListener('click', trovaVarianti);
 
@@ -3170,6 +3241,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const vBox = copia.querySelector('#varianti-risultato');
       if (vBox && vBox.children.length) { const vBtn = copia.querySelector('#varianti-btn'); if (vBtn) vBtn.remove(); }
       else { const vCard = copia.querySelector('#varianti-card'); if (vCard) vCard.remove(); }
+      copia.querySelectorAll('.es-variante').forEach((btn) => btn.remove());
+      copia.querySelectorAll('.variante-dettagli').forEach((d) => { if (!d.children.length) d.remove(); });
 
       // il trend lo salvo per tutti e tre i periodi (giorni, settimane, mesi):
       // nel file se ne vede uno alla volta e i pulsanti passano da uno all'altro

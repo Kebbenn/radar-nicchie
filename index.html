@@ -1309,6 +1309,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             </div>
             <div class="legend"><span><i class="round"></i>Sopra la media della nicchia</span><span><i class="round old"></i>Sotto la media</span></div>
             <div class="chart" id="consistency" style="display:grid; gap:10px"></div>
+            <button class="btn-light" id="costanza-more" type="button" hidden>Mostra altri</button>
           </section>
 
           <section class="card">
@@ -1353,7 +1354,12 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             <span class="label">Altri argomenti da provare</span>
             <h2>Cos'altro classificano questi canali</h2>
             <p>Guardo gli altri Shorts di classifica degli stessi canali trovati in questa ricerca, per scoprire argomenti simili che già funzionano per loro. Conto solo un argomento se lo stesso canale lo ha fatto almeno 2 volte.
-              Costa in più circa 1 credito per ogni canale controllato (fino a <b id="varianti-costo-stima">20</b> crediti), e lo faccio solo quando premi il pulsante.</p>
+              Costa in più circa 1 credito per ogni canale controllato, e lo faccio solo quando premi il pulsante.</p>
+          </div>
+          <div class="depth" role="radiogroup" aria-label="Quanti canali controllare">
+            <label><input type="radio" name="varianti-livello" value="10"><span><b>Veloce</b> fino a 10 canali · circa 10 crediti</span></label>
+            <label><input type="radio" name="varianti-livello" value="20"><span><b>Normale</b> fino a 20 canali · circa 20 crediti</span></label>
+            <label><input type="radio" name="varianti-livello" value="40"><span><b>Profonda</b> fino a 40 canali · circa 40 crediti</span></label>
           </div>
           <div><button id="varianti-btn" class="shimmer" type="button">Trova varianti</button></div>
           <div id="varianti-risultato"></div>
@@ -2207,11 +2213,17 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     }
 
     // ---------- Altri argomenti da provare: cosa classificano anche gli stessi canali ----------
-    const MAX_CANALI_VARIANTI = 20;   // quanti canali controllo al massimo (e quindi crediti massimi: 1 a canale)
     const MIN_RIPETUTO_VARIANTE = 2;  // conto un argomento solo se lo stesso canale l'ha fatto almeno 2 volte
+    const K_VARIANTI_LIVELLO = 'radar-livello-varianti';
+    let variantiLivello = String(leggi(K_VARIANTI_LIVELLO, '20'));
+    if (!['10', '20', '40'].includes(variantiLivello)) variantiLivello = '20';
+    document.querySelectorAll('input[name="varianti-livello"]').forEach((r) => {
+      r.checked = r.value === variantiLivello;
+      r.addEventListener('change', () => { variantiLivello = r.value; scrivi(K_VARIANTI_LIVELLO, variantiLivello); });
+    });
     function stemmaParola(w) { return w.length > 5 ? w.slice(0, 5) : w; }
     function canaliPerVarianti(video) {
-      return perCanale(video).sort((a, b) => b.shorts - a.shorts || b.views - a.views).slice(0, MAX_CANALI_VARIANTI);
+      return perCanale(video).sort((a, b) => b.shorts - a.shorts || b.views - a.views).slice(0, +variantiLivello);
     }
     async function trovaVarianti() {
       const btn = $('varianti-btn');
@@ -2817,6 +2829,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     }
 
     // ---------- 8: funziona sempre o è fortuna? (un pallino per ogni Short dei canali che ne hanno fatti almeno 3) ----------
+    let costanzaMostrati = 10;
     function graficoCostanza(box, video) {
       box.replaceChildren();
       const cs = costanzaCanali(video);
@@ -2830,7 +2843,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       riga.append('Canali che hanno fatto almeno 3 Shorts: ', b, ' vanno spesso sopra la media della nicchia (' + compatto(cs.soglia) + ').');
       box.append(riga);
 
-      const righe = cs.righe.slice(0, 10);
+      const righe = cs.righe.slice(0, costanzaMostrati);
       const tutti = righe.flatMap((r) => r.suoi.map((v) => v.views)).filter((n) => n > 0);
       const lo = Math.floor(Math.log10(Math.max(1, Math.min(...tutti, cs.soglia))));
       const hi = Math.max(lo + 1, Math.ceil(Math.log10(Math.max(...tutti, cs.soglia))));
@@ -2864,8 +2877,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           hit.addEventListener('blur', nascondiTip);
         });
       });
-      if (cs.righe.length > righe.length) box.append(paragrafo('Mostro i 10 canali con più Shorts su ' + cs.righe.length + '.', 'muted'));
+      const altri = cs.righe.length - righe.length;
+      $('costanza-more').hidden = altri <= 0;
+      $('costanza-more').textContent = 'Mostra altri ' + Math.min(10, altri) + ' canali (' + cs.righe.length + ' in tutto)';
     }
+    $('costanza-more').addEventListener('click', () => { costanzaMostrati += 10; graficoCostanza($('consistency'), videoAttuali); });
 
     // ---------- 9: percentuale di "colpi" ----------
     function mostraColpi(box, video) {
@@ -3325,9 +3341,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         nf.format(videoOriginali.length) + ' Shorts trovati in origine (dopo aver tolto gli altri con il filtro). Per tornare a tutti gli Shorts premi "↺ Mostra di nuovo tutti gli Shorts" sotto l\'elenco.';
       mostraNumeriRicerca();
       tabella();
+      costanzaMostrati = 10;
       $('varianti-risultato').replaceChildren();
       $('varianti-btn').disabled = false;
-      $('varianti-costo-stima').textContent = Math.min(MAX_CANALI_VARIANTI, new Set(videoAttuali.map((v) => v.canaleId)).size);
       faiComparire(document.querySelectorAll('#results .verdict, #results .thermo, #results #trend, #results .charts > .card, #results > div > .card:last-child'));
     }
 

@@ -2855,7 +2855,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const riga = document.createElement('p');
       riga.className = 'big-line';
       const b = document.createElement('b'); b.textContent = perc + '%';
-      riga.append('I primi ' + cc.primi.length + ' canali si prendono il ', b, ' delle visualizzazioni.');
+      riga.append('I primi ' + cc.primi.length + ' canali si prendono il ', b, ' delle ' + compatto(cc.totale) + ' visualizzazioni totali.');
       const barra = document.createElement('div');
       barra.className = 'share-bar';
       barra.setAttribute('role', 'img');
@@ -2867,13 +2867,14 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       ul.className = 'share-list';
       cc.primi.forEach((c) => {
         const li = document.createElement('li');
-        const n = document.createElement('span'); n.textContent = c.nome + (c.iscritti != null ? ' · ' + compatto(c.iscritti) + ' iscritti' : '');
+        const n = document.createElement('span'); n.textContent = c.nome + (c.iscritti != null ? ' · ' + compatto(c.iscritti) + ' iscritti' : '') + ' · ' + compatto(c.views) + ' visualizzazioni';
         const v = document.createElement('span'); v.className = 'num'; v.textContent = Math.round(c.views / cc.totale * 100) + '%';
         li.append(n, v); ul.append(li);
       });
       if (altri > 0) {
         const li = document.createElement('li'); li.className = 'rest-row';
-        const n = document.createElement('span'); n.textContent = 'Tutti gli altri ' + altri + ' canali';
+        const altriViews = cc.totale - cc.primi.reduce((a, c) => a + c.views, 0);
+        const n = document.createElement('span'); n.textContent = 'Tutti gli altri ' + altri + ' canali · ' + compatto(altriViews) + ' visualizzazioni';
         const v = document.createElement('span'); v.className = 'num'; v.textContent = (100 - perc) + '%';
         li.append(n, v); ul.append(li);
       }

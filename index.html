@@ -401,6 +401,7 @@
     .ricerca-banner #profondo-risultato:not(:empty) { margin-top: 8px; }
     .cp-insieme-riga { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: .9rem; cursor: pointer; }
     .cp-insieme-riga input { width: 18px; height: 18px; accent-color: var(--accent); margin: 3px 0 0; padding: 0; flex: none; }
+    .sf-prefiltri { display: flex; flex-wrap: wrap; gap: 10px 12px; margin-top: 10px; }
     #save-title { display: none; }
     .c-head h2 { font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: -0.02em; }
     /* Preferite */
@@ -756,6 +757,13 @@
               <input type="checkbox" id="cp-insieme">
               <span>Guarda anche dentro i canali trovati, per scovare Shorts che YouTube nasconde (alcuni canali pubblicano tanti Shorts quasi uguali, e la ricerca a volte ne mostra solo uno o due). Costa <b id="cp-insieme-crediti">circa 20</b> crediti in più.</span>
             </label>
+            <p class="step-hint" style="margin-top:10px">Vuoi già restringere il risultato? (facoltativo, lascia "Tutti"/"Sempre" per vedere tutto)</p>
+            <div class="sf-prefiltri">
+              <label class="field"><span class="label">Iscritti del canale</span>
+                <select id="sf-iscritti" aria-label="Iscritti del canale"><option value="">Tutti</option><option value="0-10000">Sotto 10k</option><option value="10000-100000">10k – 100k</option><option value="100000-1000000">100k – 1 Mln</option><option value="1000000-1e12">Oltre 1 Mln</option></select></label>
+              <label class="field"><span class="label">Quando pubblicato</span>
+                <select id="sf-uscito" aria-label="Quando pubblicato"><option value="0">Sempre</option><option value="7">Ultimi 7 giorni</option><option value="30">Ultimi 30 giorni</option><option value="90">Ultimi 3 mesi</option><option value="365">Ultimo anno</option></select></label>
+            </div>
           </div>
         </div>
 
@@ -1627,6 +1635,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     let infoRicerca = { guardati: null };
     let origineRicerca = 'nuova';   // 'nuova' = appena fatta, 'db' = riaperta dalle tue ricerche   // quanti Shorts ha guardato su YouTube la ricerca mostrata
     let ultimiGuardati = 0;
+    let prefiltroTesto = '';   // se la ricerca è stata ristretta subito per iscritti/data, lo racconto vicino al titolo
 
     // ---------- Memoria del browser (sempre protetta) ----------
     function leggi(k, def) {
@@ -3564,7 +3573,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       $('r-quando').textContent = (origineRicerca === 'db' ? 'Riaperta dalle tue ricerche · fatta il ' : 'Fatta il ') +
         quando.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ' alle ' +
         quando.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) +
-        (livelloRicerca && LIVELLI[livelloRicerca] ? ' · ricerca ' + LIVELLI[livelloRicerca].nome : '');
+        (livelloRicerca && LIVELLI[livelloRicerca] ? ' · ricerca ' + LIVELLI[livelloRicerca].nome : '') + prefiltroTesto;
       const rifaiBtn = $('r-rifai');
       rifaiBtn.hidden = origineRicerca !== 'db';
       if (origineRicerca === 'db') {
@@ -3672,11 +3681,36 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       }
       try {
         const momento = Date.now();
-        const video = await analizza(termine, momento);
+        let video = await analizza(termine, momento);
         if (!video.length) {
           messaggio('Non ho trovato Shorts con "rank" o "ranking" nel titolo per "' + termine + '". Prova con altre parole.', 'info');
           return false;
         }
+
+        // Filtri scelti prima di cercare (iscritti del canale, quando pubblicato): li applico subito, come se la ricerca fosse già ristretta così
+        prefiltroTesto = '';
+        const sfIscrittiSel = $('sf-iscritti'), sfUscitoSel = $('sf-uscito');
+        if (sfIscrittiSel.value || sfUscitoSel.value !== '0') {
+          const [iMin, iMax] = sfIscrittiSel.value ? sfIscrittiSel.value.split('-').map(Number) : [null, null];
+          const giorni = +sfUscitoSel.value || 0;
+          const ristretti = video.filter((v) => {
+            if (iMin != null && !(v.iscritti != null && v.iscritti >= iMin && v.iscritti < iMax)) return false;
+            if (giorni && momento - v.data > giorni * GIORNO) return false;
+            return true;
+          });
+          if (ristretti.length) {
+            const parti = [];
+            if (sfIscrittiSel.value) parti.push('iscritti ' + sfIscrittiSel.selectedOptions[0].textContent.toLowerCase());
+            if (sfUscitoSel.value !== '0') parti.push('pubblicato: ' + sfUscitoSel.selectedOptions[0].textContent.toLowerCase());
+            prefiltroTesto = ' · filtrata per ' + parti.join(', ');
+            video = ristretti;
+          } else {
+            messaggio('Ho trovato Shorts per "' + termine + '", ma nessuno rispetta i filtri che hai scelto (iscritti o quando pubblicato). Prova ad allargarli.', 'info');
+            return false;
+          }
+        }
+        sfIscrittiSel.value = ''; sfUscitoSel.value = '0';
+
         videoAttuali = video;
         videoOriginali = video;
         ricalcolato = false;
@@ -4199,6 +4233,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         livelloRicerca = LIVELLI[imp.livello] ? imp.livello : null;
         infoRicerca = { guardati: imp.guardati || null };
         origineRicerca = 'db';
+        prefiltroTesto = '';
         ordine = 'views';
         dbSalvataId = id;
         statoDb('', '');

@@ -3742,7 +3742,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         await chiamaDb('/rest/v1/ricerche?id=eq.' + encodeURIComponent(r.id), { method: 'DELETE' }, true);
         await chiamaDb('/rest/v1/ricerche', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
           creato: r.creato, ricerca: r.ricerca, riassunto: r.riassunto, video: [],
-          impostazioni: Object.assign({}, r.impostazioni || {}, { scaduta: true, canaleNome: undefined, canale: undefined }),
+          impostazioni: Object.assign({}, r.impostazioni || {}, { scaduta: true, canaleNome: undefined, canale: undefined, videoOriginali: undefined, ricalcolato: undefined }),
         }) }, true);
       }
       return daPulire.length > 0;
@@ -4031,7 +4031,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           method: 'POST', headers: { Prefer: 'return=representation' },
           body: JSON.stringify({
             ricerca: ricercaAttuale,
-            impostazioni: { livello: livelloRicerca || livello, soloRank, momento: oraAnalisi, guardati: infoRicerca.guardati },
+            impostazioni: Object.assign({ livello: livelloRicerca || livello, soloRank, momento: oraAnalisi, guardati: infoRicerca.guardati },
+              // se i punteggi sono ricalcolati su un elenco filtrato, salvo anche tutti gli Shorts originali:
+              // così, anche riaprendo la ricerca un altro giorno, resta possibile tornare a vederli tutti
+              ricalcolato && videoOriginali.length > videoAttuali.length ? { ricalcolato: true, videoOriginali } : {}),
             riassunto: riassuntoAttuale(),
             video: videoAttuali,
           }),
@@ -4054,8 +4057,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           throw new Error('I dettagli di questa ricerca sono stati cancellati dopo 30 giorni, come chiedono le regole di YouTube. Rifalla per avere dati aggiornati.');
         const imp = r[0].impostazioni || {};
         videoAttuali = r[0].video;
-        videoOriginali = r[0].video;
-        ricalcolato = false;
+        videoOriginali = Array.isArray(imp.videoOriginali) && imp.videoOriginali.length ? imp.videoOriginali : r[0].video;
+        ricalcolato = !!imp.ricalcolato;
         azzeraFiltroElenco();
         ricercaAttuale = r[0].ricerca;
         oraAnalisi = imp.momento || new Date(r[0].creato).getTime();

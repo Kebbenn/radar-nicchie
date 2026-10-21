@@ -2464,8 +2464,6 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         if (trovatiQui) conNuovi++;
       }
       if (!candidati.length) {
-        if (dbSessione && $('db-auto').checked) salvaInDb();
-        else $('db-save').hidden = !dbSessione;
         disegnaProfondo(0, controllati, conNuovi, nf.format(creditiUsati() - prima), erroreGrave);
         btn.disabled = false;
         return;
@@ -2499,12 +2497,14 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       }).filter(Boolean);
       if (nuovi.length) {
         videoAttuali = [...videoAttuali, ...nuovi];
-        videoOriginali = videoAttuali;   // questo, adesso, è l'elenco completo "vero"
-        dbSalvataId = null;
+        // se la vista è filtrata (ricalcolato), aggiungo i nuovi Shorts anche all'elenco completo "vero",
+        // così quelli tolti dal filtro restano comunque recuperabili con "Mostra di nuovo tutti gli Shorts"
+        videoOriginali = ricalcolato ? [...videoOriginali, ...nuovi] : videoAttuali;
         mostraRisultati();
+        // aggiorno la stessa ricerca salvata (non ne creo un'altra): salvaInDb() sostituisce quella vecchia da sola
+        if (dbSessione && $('db-auto').checked) salvaInDb();
+        else $('db-save').hidden = !dbSessione;
       }
-      if (dbSessione && $('db-auto').checked) salvaInDb();
-      else $('db-save').hidden = !dbSessione;
       disegnaProfondo(nuovi.length, controllati, conNuovi, nf.format(creditiUsati() - prima), erroreGrave);
       btn.disabled = false;
     }
@@ -3275,27 +3275,21 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       $('tf-termine').value = ''; $('tf-modo').value = 'contiene'; $('tf-canale').value = '';
       $('tf-iscritti').value = ''; $('tf-uscito').value = '0'; $('tf-views').value = '0'; $('tf-vpd').value = '0'; $('tf-rapporto').value = '0';
     }
+    // Filtrare e ricalcolare NON salva una nuova riga nel database: resta salvata solo la ricerca originale
+    // (con tutti gli Shorts), così non si riempie la cronologia di tante righe quasi uguali.
     function ricalcolaSuFiltro() {
       const filtrati = applicaFiltroElenco(videoAttuali);
       if (!filtrati.length) return;
       videoAttuali = filtrati;
       ricalcolato = true;
-      dbSalvataId = null;
       azzeraFiltroElenco();
-      statoSalvataggio('');
       mostraRisultati();
-      if (dbSessione && $('db-auto').checked) salvaInDb();
-      else $('db-save').hidden = !dbSessione;
     }
     function ripristinaVideoOriginali() {
       videoAttuali = videoOriginali;
       ricalcolato = false;
-      dbSalvataId = null;
       azzeraFiltroElenco();
-      statoSalvataggio('');
       mostraRisultati();
-      if (dbSessione && $('db-auto').checked) salvaInDb();
-      else $('db-save').hidden = !dbSessione;
     }
     FE_FILTRI.forEach((id) => {
       const agg = () => tabella();
@@ -3728,6 +3722,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         mostraRisultati();
         if (conProfondo) {
           await cercaDentroCanali();
+          // se non ha trovato nulla di nuovo, cercaDentroCanali() non ha salvato: lo faccio qui, come ricerca normale
+          if (!dbSalvataId) {
+            if (dbSessione && $('db-auto').checked) salvaInDb();
+            else $('db-save').hidden = !dbSessione;
+          }
         } else if (dbSessione && $('db-auto').checked) {
           salvaInDb();
         } else {
@@ -4194,6 +4193,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     async function salvaInDb() {
       if (!dbSessione || !videoAttuali.length) return;
       statoSalvataggio('Salvo la ricerca nel database…');
+      // se questa stessa ricerca era già salvata (es. "Cerca più a fondo" ha trovato altri Shorts), la sostituisco
+      // invece di aggiungerne un'altra: tolgo la vecchia riga solo DOPO che la nuova è salvata bene
+      const vecchioId = dbSalvataId && dbSalvataId !== 'ok' ? dbSalvataId : null;
       try {
         const r = await chiamaDb('/rest/v1/ricerche?select=id', {
           method: 'POST', headers: { Prefer: 'return=representation' },
@@ -4208,6 +4210,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           }),
         }, true);
         dbSalvataId = r && r[0] ? r[0].id : 'ok';
+        if (vecchioId && vecchioId !== dbSalvataId) await chiamaDb('/rest/v1/ricerche?id=eq.' + encodeURIComponent(vecchioId), { method: 'DELETE' }, true);
         statoSalvataggio('Salvata nel database online ✓');
         $('db-save').hidden = true;
         caricaStorico();

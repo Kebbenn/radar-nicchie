@@ -1388,6 +1388,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             <label class="field"><span class="label">&nbsp;</span>
               <select id="tf-modo"><option value="contiene">Che contengono questa parola</option><option value="non">Che NON contengono questa parola</option></select></label>
             <button id="tf-ricalcola" class="shimmer" type="button" disabled>Ricalcola solo su questi</button>
+            <button id="tf-reset" class="btn-link" type="button">Togli i filtri</button>
             <button id="tf-ripristina" class="btn-link" type="button" hidden>↺ Mostra di nuovo tutti gli Shorts</button>
           </div>
           <p class="muted" id="tf-conta" style="font-size:.85rem"></p>
@@ -1400,6 +1401,14 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
                   <th class="r"><button type="button" data-sort="views">Visualizzazioni</button></th>
                   <th class="r"><button type="button" data-sort="vpd">Al giorno</button></th>
                   <th class="r"><button type="button" data-sort="rapporto">× iscritti</button></th>
+                </tr>
+                <tr class="filtri-colonne">
+                  <th><div class="filtro-doppio"><input id="tf-canale" type="search" placeholder="Cerca canale" aria-label="Cerca canale" autocomplete="off">
+                    <select id="tf-iscritti" aria-label="Iscritti del canale"><option value="">Iscritti: tutti</option><option value="0-10000">Sotto 10k</option><option value="10000-100000">10k – 100k</option><option value="100000-1000000">100k – 1 Mln</option><option value="1000000-1e12">Oltre 1 Mln</option></select></div></th>
+                  <th><select id="tf-uscito" aria-label="Uscito da quando"><option value="0">Sempre</option><option value="7">Ultimi 7 giorni</option><option value="30">Ultimi 30 giorni</option><option value="90">Ultimi 3 mesi</option><option value="365">Ultimo anno</option></select></th>
+                  <th><select id="tf-views" aria-label="Visualizzazioni minime"><option value="0">Tutte</option><option value="10000">10k o più</option><option value="100000">100k o più</option><option value="1000000">1 Mln o più</option><option value="10000000">10 Mln o più</option></select></th>
+                  <th><select id="tf-vpd" aria-label="Visualizzazioni al giorno minime"><option value="0">Tutte</option><option value="1000">1k o più</option><option value="10000">10k o più</option><option value="100000">100k o più</option></select></th>
+                  <th><select id="tf-rapporto" aria-label="Volte gli iscritti, minimo"><option value="0">Tutti</option><option value="1">×1 o più</option><option value="3">×3 o più</option><option value="10">×10 o più</option></select></th>
                 </tr>
               </thead>
               <tbody id="tbody"></tbody>
@@ -3092,20 +3101,43 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     let ordine = 'views';
     let ricalcolato = false;   // true se i punteggi sono stati ricalcolati su un elenco filtrato
 
-    // ---------- Filtro sopra l'elenco: mostra solo gli Shorts che contengono (o non contengono) una parola nel titolo ----------
+    // ---------- Filtri sopra l'elenco: titolo, canale, iscritti, data, visualizzazioni, al giorno, × iscritti ----------
+    const FE_FILTRI = ['tf-termine', 'tf-modo', 'tf-canale', 'tf-iscritti', 'tf-uscito', 'tf-views', 'tf-vpd', 'tf-rapporto'];
+    function filtroElencoAttivo() {
+      const termine = $('tf-termine').value.trim(), canale = $('tf-canale').value.trim();
+      return !!(termine || canale || $('tf-iscritti').value || $('tf-uscito').value !== '0' ||
+        $('tf-views').value !== '0' || $('tf-vpd').value !== '0' || $('tf-rapporto').value !== '0');
+    }
     function applicaFiltroElenco(video) {
       const termine = normalizzaTesto($('tf-termine').value);
-      if (!termine) return video;
       const escludi = $('tf-modo').value === 'non';
-      return video.filter((v) => normalizzaTesto(v.titolo).includes(termine) !== escludi);
+      const canale = normalizzaTesto($('tf-canale').value);
+      const [iMin, iMax] = $('tf-iscritti').value ? $('tf-iscritti').value.split('-').map(Number) : [null, null];
+      const giorni = +$('tf-uscito').value || 0;
+      const minViews = +$('tf-views').value || 0, minVpd = +$('tf-vpd').value || 0, minRapporto = +$('tf-rapporto').value || 0;
+      const ora = oraAnalisi;
+      return video.filter((v) => {
+        if (termine && normalizzaTesto(v.titolo).includes(termine) === escludi) return false;
+        if (canale && !normalizzaTesto(v.canale).includes(canale)) return false;
+        if (iMin != null && !(v.iscritti != null && v.iscritti >= iMin && v.iscritti < iMax)) return false;
+        if (giorni && ora - v.data > giorni * GIORNO) return false;
+        if (v.views < minViews) return false;
+        if ((v.vpd || 0) < minVpd) return false;
+        if (minRapporto && !(v.rapporto != null && v.rapporto >= minRapporto)) return false;
+        return true;
+      });
     }
     function aggiornaFiltroElenco(nFiltrati) {
-      const termine = $('tf-termine').value.trim();
+      const attivo = filtroElencoAttivo();
       const tot = videoAttuali.length;
       const shorts = (n) => n + (n === 1 ? ' Short' : ' Shorts');
-      $('tf-conta').textContent = !termine ? shorts(tot) + ' in elenco.' : shorts(nFiltrati) + ' su ' + shorts(tot) + ' rispettano il filtro.';
-      $('tf-ricalcola').disabled = !termine || nFiltrati === 0 || nFiltrati === tot;
+      $('tf-conta').textContent = !attivo ? shorts(tot) + ' in elenco.' : shorts(nFiltrati) + ' su ' + shorts(tot) + ' rispettano i filtri.';
+      $('tf-ricalcola').disabled = !attivo || nFiltrati === 0 || nFiltrati === tot;
       $('tf-ripristina').hidden = !ricalcolato;
+    }
+    function azzeraFiltroElenco() {
+      $('tf-termine').value = ''; $('tf-modo').value = 'contiene'; $('tf-canale').value = '';
+      $('tf-iscritti').value = ''; $('tf-uscito').value = '0'; $('tf-views').value = '0'; $('tf-vpd').value = '0'; $('tf-rapporto').value = '0';
     }
     function ricalcolaSuFiltro() {
       const filtrati = applicaFiltroElenco(videoAttuali);
@@ -3113,7 +3145,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       videoAttuali = filtrati;
       ricalcolato = true;
       dbSalvataId = null;
-      $('tf-termine').value = '';
+      azzeraFiltroElenco();
       statoSalvataggio('');
       mostraRisultati();
       if (dbSessione && $('db-auto').checked) salvaInDb();
@@ -3123,14 +3155,18 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       videoAttuali = videoOriginali;
       ricalcolato = false;
       dbSalvataId = null;
-      $('tf-termine').value = '';
+      azzeraFiltroElenco();
       statoSalvataggio('');
       mostraRisultati();
       if (dbSessione && $('db-auto').checked) salvaInDb();
       else $('db-save').hidden = !dbSessione;
     }
-    $('tf-termine').addEventListener('input', conCalma(() => tabella()));
-    $('tf-modo').addEventListener('change', () => tabella());
+    FE_FILTRI.forEach((id) => {
+      const agg = () => tabella();
+      const testo = id === 'tf-termine' || id === 'tf-canale';
+      $(id).addEventListener(testo ? 'input' : 'change', testo ? conCalma(agg) : agg);
+    });
+    $('tf-reset').addEventListener('click', () => { azzeraFiltroElenco(); tabella(); });
     $('tf-ricalcola').addEventListener('click', ricalcolaSuFiltro);
     $('tf-ripristina').addEventListener('click', ripristinaVideoOriginali);
 
@@ -3149,7 +3185,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         a.href = linkVideo(v.id); a.target = '_blank'; a.rel = 'noopener';
         a.textContent = v.titolo;
         const sm = document.createElement('small');
-        sm.textContent = v.canale + (v.durata != null ? ' · ' + durataTesto(v.durata) : '');
+        sm.textContent = v.canale + (v.iscritti != null ? ' · ' + compatto(v.iscritti) + ' iscritti' : '') + (v.durata != null ? ' · ' + durataTesto(v.durata) : '');
         info.append(a, sm);
         box.append(img, info);
         td0.append(box);
@@ -3237,7 +3273,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const ora = new Date();
       const copia = $('results').firstElementChild.cloneNode(true);
       copia.querySelector('#save-bar').remove();
-      copia.querySelectorAll('.actions, .table-head + p, #filtro-elenco, #tf-conta, #r-rifai').forEach((n) => n.remove());
+      copia.querySelectorAll('.actions, .table-head + p, #filtro-elenco, #tf-conta, #r-rifai, tr.filtri-colonne').forEach((n) => n.remove());
       const vBox = copia.querySelector('#varianti-risultato');
       if (vBox && vBox.children.length) { const vBtn = copia.querySelector('#varianti-btn'); if (vBtn) vBtn.remove(); }
       else { const vCard = copia.querySelector('#varianti-card'); if (vCard) vCard.remove(); }
@@ -3514,7 +3550,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         videoAttuali = video;
         videoOriginali = video;
         ricalcolato = false;
-        $('tf-termine').value = ''; $('tf-modo').value = 'contiene';
+        azzeraFiltroElenco();
         ricercaAttuale = termine;
         oraAnalisi = momento;
         livelloRicerca = livello;
@@ -4019,7 +4055,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         videoAttuali = r[0].video;
         videoOriginali = r[0].video;
         ricalcolato = false;
-        $('tf-termine').value = ''; $('tf-modo').value = 'contiene';
+        azzeraFiltroElenco();
         ricercaAttuale = r[0].ricerca;
         oraAnalisi = imp.momento || new Date(r[0].creato).getTime();
         livelloRicerca = LIVELLI[imp.livello] ? imp.livello : null;

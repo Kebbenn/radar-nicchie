@@ -1124,6 +1124,21 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <p id="r-quando"></p>
           <button id="r-rifai" class="btn-light" type="button" hidden>↻ Rifai con dati aggiornati</button>
         </section>
+        <section class="card" id="profondo-card">
+          <div class="card-head">
+            <span class="label">Cerca più a fondo</span>
+            <h2>Trova anche gli Shorts che YouTube nasconde</h2>
+            <p>YouTube a volte, nei risultati di ricerca, non mostra più di uno o due Shorts molto simili dello stesso canale, anche se quel canale ne ha pubblicati tanti sullo stesso argomento.
+              Guardo dentro ogni canale già trovato, uno per uno, per scoprire i suoi altri Shorts su questo argomento che la ricerca normale potrebbe aver lasciato fuori, e li aggiungo a tutti i grafici qui sotto.</p>
+          </div>
+          <div class="depth" role="radiogroup" aria-label="Quanti canali controllare">
+            <label><input type="radio" name="profondo-livello" value="10"><span><b>Veloce</b> fino a 10 canali · circa 10 crediti</span></label>
+            <label><input type="radio" name="profondo-livello" value="20"><span><b>Normale</b> fino a 20 canali · circa 20 crediti</span></label>
+            <label><input type="radio" name="profondo-livello" value="40"><span><b>Profonda</b> fino a 40 canali · circa 40 crediti</span></label>
+          </div>
+          <div><button id="profondo-btn" class="shimmer" type="button">Cerca più a fondo</button></div>
+          <div id="profondo-risultato"></div>
+        </section>
         <p class="msg info" id="ricalcolo-avviso" hidden></p>
         <div class="save-bar" id="save-bar">
           <p id="save-title">Risultati</p>
@@ -2384,6 +2399,109 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     }
     $('varianti-btn').addEventListener('click', trovaVarianti);
 
+    // ---------- Cerca più a fondo: trova dentro ogni canale gli Shorts che la ricerca normale potrebbe aver lasciato fuori ----------
+    const K_PROFONDO_LIVELLO = 'radar-livello-profondo';
+    let profondoLivello = String(leggi(K_PROFONDO_LIVELLO, '20'));
+    if (!['10', '20', '40'].includes(profondoLivello)) profondoLivello = '20';
+    document.querySelectorAll('input[name="profondo-livello"]').forEach((r) => {
+      r.checked = r.value === profondoLivello;
+      r.addEventListener('change', () => { profondoLivello = r.value; scrivi(K_PROFONDO_LIVELLO, profondoLivello); });
+    });
+    function canaliPerApprofondimento(video) {
+      return perCanale(video).sort((a, b) => b.shorts - a.shorts || b.views - a.views).slice(0, +profondoLivello);
+    }
+    async function cercaDentroCanali() {
+      const btn = $('profondo-btn');
+      const box = $('profondo-risultato');
+      const canali = canaliPerApprofondimento(videoAttuali);
+      if (!canali.length) { box.replaceChildren(paragrafo('Nessun canale da controllare.', 'empty-chart')); return; }
+      btn.disabled = true;
+      const prima = creditiUsati();
+      const paroleChiave = parole(ricercaAttuale);
+      const giaTrovati = new Set(videoAttuali.map((v) => v.id));
+      const candidati = [];   // Shorts nuovi trovati dentro ai canali, in attesa di visualizzazioni/durata precise
+      let controllati = 0, conNuovi = 0, erroreGrave = null;
+      for (const c of canali) {
+        box.replaceChildren(paragrafo('Controllo dentro ' + c.nome + '… (' + (controllati + 1) + ' di ' + canali.length + ')', 'muted'));
+        let items = [];
+        try {
+          const d = await chiama('playlistItems', {
+            part: 'snippet', playlistId: 'UUSH' + c.id.slice(2), maxResults: 50,
+            fields: 'items/snippet(title,description,tags,publishedAt,resourceId/videoId,thumbnails/medium/url)',
+          }, 1);
+          items = d.items || [];
+        } catch (e) {
+          if (/crediti|chiave|API/i.test(e.message)) { erroreGrave = e.message; controllati++; break; }
+        }
+        controllati++;
+        let trovatiQui = 0;
+        items.forEach((it) => {
+          const vid = it.snippet.resourceId && it.snippet.resourceId.videoId;
+          if (!vid || giaTrovati.has(vid)) return;
+          const titolo = decodifica(it.snippet.title);
+          if (!haRank(titolo)) return;
+          if (!stessoArgomento(it.snippet, paroleChiave)) return;
+          giaTrovati.add(vid);
+          trovatiQui++;
+          candidati.push({ id: vid, titolo, canale: c.nome, canaleId: c.id, iscritti: c.iscritti, canaleNato: c.nato,
+            thumb: it.snippet.thumbnails && it.snippet.thumbnails.medium ? it.snippet.thumbnails.medium.url : '' });
+        });
+        if (trovatiQui) conNuovi++;
+      }
+      if (!candidati.length) {
+        disegnaProfondo(0, controllati, conNuovi, nf.format(creditiUsati() - prima), erroreGrave);
+        btn.disabled = false;
+        return;
+      }
+      box.replaceChildren(paragrafo('Controllo visualizzazioni e durata dei ' + candidati.length + ' Shorts trovati in più…', 'muted'));
+      const dettagli = new Map();
+      for (const gruppo of aGruppi(candidati.map((v) => v.id), 50)) {
+        const d = await chiama('videos', {
+          part: 'snippet,statistics,contentDetails', id: gruppo.join(','),
+          fields: 'items(id,snippet/publishedAt,statistics(viewCount,likeCount,commentCount),contentDetails/duration)',
+        }, 1);
+        (d.items || []).forEach((x) => dettagli.set(x.id, x));
+      }
+      const momento = oraAnalisi;
+      const nuovi = candidati.map((v) => {
+        const d = dettagli.get(v.id);
+        if (!d || !d.statistics || d.statistics.viewCount == null) return null;
+        const durata = durataSecondi(d.contentDetails && d.contentDetails.duration);
+        if (durata == null || durata <= 0 || durata > DURATA_MAX_SHORT) return null;
+        const data = new Date(d.snippet.publishedAt);
+        const giorni = Math.max((momento - data) / GIORNO, 0.5);
+        const views = +d.statistics.viewCount;
+        return {
+          id: v.id, base: true, campione: true,
+          titolo: v.titolo, canale: v.canale, canaleId: v.canaleId, canaleNato: v.canaleNato,
+          thumb: v.thumb, data: data.getTime(), giorni, views,
+          likes: d.statistics.likeCount != null ? +d.statistics.likeCount : null,
+          commenti: d.statistics.commentCount != null ? +d.statistics.commentCount : null,
+          iscritti: v.iscritti, vpd: views / giorni, rapporto: v.iscritti ? views / v.iscritti : null, durata,
+        };
+      }).filter(Boolean);
+      if (nuovi.length) {
+        videoAttuali = [...videoAttuali, ...nuovi];
+        videoOriginali = videoAttuali;   // questo, adesso, è l'elenco completo "vero"
+        dbSalvataId = null;
+        mostraRisultati();
+        if (dbSessione && $('db-auto').checked) salvaInDb();
+        else $('db-save').hidden = !dbSessione;
+      }
+      disegnaProfondo(nuovi.length, controllati, conNuovi, nf.format(creditiUsati() - prima), erroreGrave);
+      btn.disabled = false;
+    }
+    function disegnaProfondo(nTrovati, controllati, conNuovi, crediti, errore) {
+      const box = $('profondo-risultato');
+      box.replaceChildren();
+      box.append(paragrafo('Controllati ' + controllati + ' canali (' + conNuovi + ' avevano altri Shorts nascosti) · ' + crediti + ' crediti usati.' +
+        (errore ? ' Mi sono fermato prima della fine: ' + errore : ''), 'muted'));
+      box.append(paragrafo(nTrovati
+        ? 'Trovati ' + nf.format(nTrovati) + (nTrovati === 1 ? ' Short in più' : ' Shorts in più') + ', già aggiunti a tutti i grafici e all\'elenco qui sotto.'
+        : 'Non ho trovato altri Shorts nascosti in questi canali.', nTrovati ? 'big-line' : 'empty-chart'));
+    }
+    $('profondo-btn').addEventListener('click', cercaDentroCanali);
+
     // 13. Coinvolgimento: like e commenti ogni 1.000 visualizzazioni
     function coinvolgimento(video) {
       const ok = video.filter((v) => v.views >= 1000 && v.likes != null);
@@ -3280,6 +3398,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       else { const vCard = copia.querySelector('#varianti-card'); if (vCard) vCard.remove(); }
       copia.querySelectorAll('.es-variante').forEach((btn) => btn.remove());
       copia.querySelectorAll('.variante-dettagli').forEach((d) => { if (!d.children.length) d.remove(); });
+      const pCard = copia.querySelector('#profondo-card'); if (pCard) pCard.remove();
 
       // il trend lo salvo per tutti e tre i periodi (giorni, settimane, mesi):
       // nel file se ne vede uno alla volta e i pulsanti passano da uno all'altro
@@ -3454,6 +3573,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       costanzaMostrati = 10;
       $('varianti-risultato').replaceChildren();
       $('varianti-btn').disabled = false;
+      $('profondo-risultato').replaceChildren();
+      $('profondo-btn').disabled = false;
       faiComparire(document.querySelectorAll('#results .verdict, #results .thermo, #results #trend, #results .charts > .card, #results > div > .card:last-child'));
     }
 

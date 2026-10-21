@@ -396,7 +396,11 @@
     }
     .ricerca-banner p { color: var(--muted); font-size: .92rem; }
     .ricerca-banner p::first-letter { text-transform: uppercase; }
-    .ricerca-banner #r-rifai { justify-self: start; margin-top: 6px; white-space: normal; text-align: left; }
+    .ricerca-banner .banner-azioni { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .ricerca-banner .banner-azioni button { white-space: normal; text-align: left; }
+    .ricerca-banner #profondo-risultato:not(:empty) { margin-top: 8px; }
+    .cp-insieme-riga { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; font-size: .9rem; cursor: pointer; }
+    .cp-insieme-riga input { width: 18px; height: 18px; accent-color: var(--accent); margin: 3px 0 0; padding: 0; flex: none; }
     #save-title { display: none; }
     .c-head h2 { font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: -0.02em; }
     /* Preferite */
@@ -748,6 +752,10 @@
               <label><input type="radio" name="livello" value="normale"><span><b>Normale</b> fino a 200 · 405 crediti</span></label>
               <label><input type="radio" name="livello" value="profonda"><span><b>Profonda</b> fino a 300 · 605 crediti</span></label>
             </div>
+            <label class="cp-insieme-riga">
+              <input type="checkbox" id="cp-insieme">
+              <span>Guarda anche dentro i canali trovati, per scovare Shorts che YouTube nasconde (alcuni canali pubblicano tanti Shorts quasi uguali, e la ricerca a volte ne mostra solo uno o due). Costa <b id="cp-insieme-crediti">circa 20</b> crediti in più.</span>
+            </label>
           </div>
         </div>
 
@@ -1122,23 +1130,35 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <span class="label">Ricerca</span>
           <h1 id="r-termine"></h1>
           <p id="r-quando"></p>
-          <button id="r-rifai" class="btn-light" type="button" hidden>↻ Rifai con dati aggiornati</button>
-        </section>
-        <section class="card" id="profondo-card">
-          <div class="card-head">
-            <span class="label">Cerca più a fondo</span>
-            <h2>Trova anche gli Shorts che YouTube nasconde</h2>
-            <p>YouTube a volte, nei risultati di ricerca, non mostra più di uno o due Shorts molto simili dello stesso canale, anche se quel canale ne ha pubblicati tanti sullo stesso argomento.
-              Guardo dentro ogni canale già trovato, uno per uno, per scoprire i suoi altri Shorts su questo argomento che la ricerca normale potrebbe aver lasciato fuori, e li aggiungo a tutti i grafici qui sotto.</p>
+          <div class="banner-azioni">
+            <button id="r-rifai" class="btn-light" type="button" hidden>↻ Rifai con dati aggiornati</button>
+            <button id="profondo-btn" class="btn-light" type="button" title="Guardo dentro ogni canale già trovato per scovare altri suoi Shorts su questo argomento che la ricerca normale potrebbe aver lasciato fuori">🔎 Guarda anche dentro i canali trovati</button>
           </div>
-          <div class="depth" role="radiogroup" aria-label="Quanti canali controllare">
-            <label><input type="radio" name="profondo-livello" value="10"><span><b>Veloce</b> fino a 10 canali · circa 10 crediti</span></label>
-            <label><input type="radio" name="profondo-livello" value="20"><span><b>Normale</b> fino a 20 canali · circa 20 crediti</span></label>
-            <label><input type="radio" name="profondo-livello" value="40"><span><b>Profonda</b> fino a 40 canali · circa 40 crediti</span></label>
-          </div>
-          <div><button id="profondo-btn" class="shimmer" type="button">Cerca più a fondo</button></div>
           <div id="profondo-risultato"></div>
         </section>
+        <p class="muted" id="filtro-intro" style="font-size:.9rem">Vuoi calcolare i punteggi e i grafici solo su una parte di questi Shorts? Scegli qui i filtri che vuoi e premi "Ricalcola solo su questi".</p>
+        <div class="filtro-elenco" id="filtro-elenco">
+          <label class="field grow"><span class="label">Filtra per titolo</span>
+            <input id="tf-termine" type="search" placeholder="Es. pizza, tier list…" autocomplete="off"></label>
+          <label class="field"><span class="label">&nbsp;</span>
+            <select id="tf-modo"><option value="contiene">Che contengono questa parola</option><option value="non">Che NON contengono questa parola</option></select></label>
+          <label class="field grow"><span class="label">Canale</span>
+            <input id="tf-canale" type="search" placeholder="Cerca canale" aria-label="Cerca canale" autocomplete="off"></label>
+          <label class="field"><span class="label">Iscritti del canale</span>
+            <select id="tf-iscritti" aria-label="Iscritti del canale"><option value="">Tutti</option><option value="0-10000">Sotto 10k</option><option value="10000-100000">10k – 100k</option><option value="100000-1000000">100k – 1 Mln</option><option value="1000000-1e12">Oltre 1 Mln</option></select></label>
+          <label class="field"><span class="label">Uscito da quando</span>
+            <select id="tf-uscito" aria-label="Uscito da quando"><option value="0">Sempre</option><option value="7">Ultimi 7 giorni</option><option value="30">Ultimi 30 giorni</option><option value="90">Ultimi 3 mesi</option><option value="365">Ultimo anno</option></select></label>
+          <label class="field"><span class="label">Visualizzazioni minime</span>
+            <select id="tf-views" aria-label="Visualizzazioni minime"><option value="0">Tutte</option><option value="10000">10k o più</option><option value="100000">100k o più</option><option value="1000000">1 Mln o più</option><option value="10000000">10 Mln o più</option></select></label>
+          <label class="field"><span class="label">Al giorno, minime</span>
+            <select id="tf-vpd" aria-label="Visualizzazioni al giorno minime"><option value="0">Tutte</option><option value="1000">1k o più</option><option value="10000">10k o più</option><option value="100000">100k o più</option></select></label>
+          <label class="field"><span class="label">Volte gli iscritti, minimo</span>
+            <select id="tf-rapporto" aria-label="Volte gli iscritti, minimo"><option value="0">Tutti</option><option value="1">×1 o più</option><option value="3">×3 o più</option><option value="10">×10 o più</option></select></label>
+          <button id="tf-ricalcola" class="shimmer" type="button" disabled>Ricalcola solo su questi</button>
+          <button id="tf-reset" class="btn-link" type="button">Togli i filtri</button>
+          <button id="tf-ripristina" class="btn-link" type="button" hidden>↺ Mostra di nuovo tutti gli Shorts</button>
+        </div>
+        <p class="muted" id="tf-conta" style="font-size:.85rem"></p>
         <p class="msg info" id="ricalcolo-avviso" hidden></p>
         <div class="save-bar" id="save-bar">
           <p id="save-title">Risultati</p>
@@ -1397,16 +1417,6 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             </div>
           </div>
           <p class="muted" style="font-size:.85rem">Il file si apre con Excel o Fogli Google. Premi i titoli delle colonne per ordinare.</p>
-          <div class="filtro-elenco" id="filtro-elenco">
-            <label class="field grow"><span class="label">Filtra per titolo</span>
-              <input id="tf-termine" type="search" placeholder="Es. pizza, tier list…" autocomplete="off"></label>
-            <label class="field"><span class="label">&nbsp;</span>
-              <select id="tf-modo"><option value="contiene">Che contengono questa parola</option><option value="non">Che NON contengono questa parola</option></select></label>
-            <button id="tf-ricalcola" class="shimmer" type="button" disabled>Ricalcola solo su questi</button>
-            <button id="tf-reset" class="btn-link" type="button">Togli i filtri</button>
-            <button id="tf-ripristina" class="btn-link" type="button" hidden>↺ Mostra di nuovo tutti gli Shorts</button>
-          </div>
-          <p class="muted" id="tf-conta" style="font-size:.85rem"></p>
           <div class="table-box">
             <table>
               <thead>
@@ -1416,14 +1426,6 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
                   <th class="r"><button type="button" data-sort="views">Visualizzazioni</button></th>
                   <th class="r"><button type="button" data-sort="vpd">Al giorno</button></th>
                   <th class="r"><button type="button" data-sort="rapporto">× iscritti</button></th>
-                </tr>
-                <tr class="filtri-colonne">
-                  <th><div class="filtro-doppio"><input id="tf-canale" type="search" placeholder="Cerca canale" aria-label="Cerca canale" autocomplete="off">
-                    <select id="tf-iscritti" aria-label="Iscritti del canale"><option value="">Iscritti: tutti</option><option value="0-10000">Sotto 10k</option><option value="10000-100000">10k – 100k</option><option value="100000-1000000">100k – 1 Mln</option><option value="1000000-1e12">Oltre 1 Mln</option></select></div></th>
-                  <th><select id="tf-uscito" aria-label="Uscito da quando"><option value="0">Sempre</option><option value="7">Ultimi 7 giorni</option><option value="30">Ultimi 30 giorni</option><option value="90">Ultimi 3 mesi</option><option value="365">Ultimo anno</option></select></th>
-                  <th><select id="tf-views" aria-label="Visualizzazioni minime"><option value="0">Tutte</option><option value="10000">10k o più</option><option value="100000">100k o più</option><option value="1000000">1 Mln o più</option><option value="10000000">10 Mln o più</option></select></th>
-                  <th><select id="tf-vpd" aria-label="Visualizzazioni al giorno minime"><option value="0">Tutte</option><option value="1000">1k o più</option><option value="10000">10k o più</option><option value="100000">100k o più</option></select></th>
-                  <th><select id="tf-rapporto" aria-label="Volte gli iscritti, minimo"><option value="0">Tutti</option><option value="1">×1 o più</option><option value="3">×3 o più</option><option value="10">×10 o più</option></select></th>
                 </tr>
               </thead>
               <tbody id="tbody"></tbody>
@@ -1698,10 +1700,19 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     // ---------- Quanti Shorts cercare ----------
     let livello = leggi(K_LIVELLO, 'normale');
     if (!LIVELLI[livello]) livello = 'normale';
+    const PROF_DA_LIVELLO = { veloce: '10', normale: '20', profonda: '40' };
+    function aggiornaCreditiInsieme() { $('cp-insieme-crediti').textContent = 'circa ' + (PROF_DA_LIVELLO[livello] || '20'); }
     document.querySelectorAll('input[name="livello"]').forEach((r) => {
       r.checked = r.value === livello;
-      r.addEventListener('change', () => { livello = r.value; scrivi(K_LIVELLO, livello); mostraCrediti(); });
+      r.addEventListener('change', () => { livello = r.value; scrivi(K_LIVELLO, livello); mostraCrediti(); aggiornaCreditiInsieme(); });
     });
+
+    // ---------- Guarda anche dentro i canali trovati, assieme alla ricerca ----------
+    const K_CP_INSIEME = 'radar-cp-insieme';
+    let cpInsieme = leggi(K_CP_INSIEME, false);
+    $('cp-insieme').checked = !!cpInsieme;
+    $('cp-insieme').addEventListener('change', () => { cpInsieme = $('cp-insieme').checked; scrivi(K_CP_INSIEME, cpInsieme); });
+    aggiornaCreditiInsieme();
 
     // ---------- Chiave ----------
     let chiave = leggi(K_CHIAVE, '');
@@ -2400,19 +2411,14 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     $('varianti-btn').addEventListener('click', trovaVarianti);
 
     // ---------- Cerca più a fondo: trova dentro ogni canale gli Shorts che la ricerca normale potrebbe aver lasciato fuori ----------
-    const K_PROFONDO_LIVELLO = 'radar-livello-profondo';
-    let profondoLivello = String(leggi(K_PROFONDO_LIVELLO, '20'));
-    if (!['10', '20', '40'].includes(profondoLivello)) profondoLivello = '20';
-    document.querySelectorAll('input[name="profondo-livello"]').forEach((r) => {
-      r.checked = r.value === profondoLivello;
-      r.addEventListener('change', () => { profondoLivello = r.value; scrivi(K_PROFONDO_LIVELLO, profondoLivello); });
-    });
+    let profondoLivello = '20';   // scelto in automatico in base al livello della ricerca mostrata (vedi sotto)
     function canaliPerApprofondimento(video) {
       return perCanale(video).sort((a, b) => b.shorts - a.shorts || b.views - a.views).slice(0, +profondoLivello);
     }
     async function cercaDentroCanali() {
       const btn = $('profondo-btn');
       const box = $('profondo-risultato');
+      profondoLivello = PROF_DA_LIVELLO[livelloRicerca] || profondoLivello;
       const canali = canaliPerApprofondimento(videoAttuali);
       if (!canali.length) { box.replaceChildren(paragrafo('Nessun canale da controllare.', 'empty-chart')); return; }
       btn.disabled = true;
@@ -2449,6 +2455,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         if (trovatiQui) conNuovi++;
       }
       if (!candidati.length) {
+        if (dbSessione && $('db-auto').checked) salvaInDb();
+        else $('db-save').hidden = !dbSessione;
         disegnaProfondo(0, controllati, conNuovi, nf.format(creditiUsati() - prima), erroreGrave);
         btn.disabled = false;
         return;
@@ -2485,9 +2493,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         videoOriginali = videoAttuali;   // questo, adesso, è l'elenco completo "vero"
         dbSalvataId = null;
         mostraRisultati();
-        if (dbSessione && $('db-auto').checked) salvaInDb();
-        else $('db-save').hidden = !dbSessione;
       }
+      if (dbSessione && $('db-auto').checked) salvaInDb();
+      else $('db-save').hidden = !dbSessione;
       disegnaProfondo(nuovi.length, controllati, conNuovi, nf.format(creditiUsati() - prima), erroreGrave);
       btn.disabled = false;
     }
@@ -3392,13 +3400,12 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const ora = new Date();
       const copia = $('results').firstElementChild.cloneNode(true);
       copia.querySelector('#save-bar').remove();
-      copia.querySelectorAll('.actions, .table-head + p, #filtro-elenco, #tf-conta, #r-rifai, tr.filtri-colonne').forEach((n) => n.remove());
+      copia.querySelectorAll('.actions, .table-head + p, #filtro-intro, #filtro-elenco, #tf-conta, .banner-azioni, #profondo-risultato, tr.filtri-colonne').forEach((n) => n.remove());
       const vBox = copia.querySelector('#varianti-risultato');
       if (vBox && vBox.children.length) { const vBtn = copia.querySelector('#varianti-btn'); if (vBtn) vBtn.remove(); }
       else { const vCard = copia.querySelector('#varianti-card'); if (vCard) vCard.remove(); }
       copia.querySelectorAll('.es-variante').forEach((btn) => btn.remove());
       copia.querySelectorAll('.variante-dettagli').forEach((d) => { if (!d.children.length) d.remove(); });
-      const pCard = copia.querySelector('#profondo-card'); if (pCard) pCard.remove();
 
       // il trend lo salvo per tutti e tre i periodi (giorni, settimane, mesi):
       // nel file se ne vede uno alla volta e i pulsanti passano da uno all'altro
@@ -3567,7 +3574,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const avviso = $('ricalcolo-avviso');
       avviso.hidden = !ricalcolato;
       if (ricalcolato) avviso.textContent = 'Questi numeri sono ricalcolati solo su ' + nf.format(videoAttuali.length) + ' dei ' +
-        nf.format(videoOriginali.length) + ' Shorts trovati in origine (dopo aver tolto gli altri con il filtro). Per tornare a tutti gli Shorts premi "↺ Mostra di nuovo tutti gli Shorts" sotto l\'elenco.';
+        nf.format(videoOriginali.length) + ' Shorts trovati in origine (dopo aver tolto gli altri con il filtro). Per tornare a tutti gli Shorts premi "↺ Mostra di nuovo tutti gli Shorts" qui sopra.';
       mostraNumeriRicerca();
       tabella();
       costanzaMostrati = 10;
@@ -3654,8 +3661,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       messaggio('Chiave cancellata.', 'info');
     });
 
-    // Cerca su YouTube e mostra i risultati; la usano sia il modulo "Analizza" sia il pulsante "Rifai con dati aggiornati"
-    async function eseguiRicerca(termine) {
+    // Cerca su YouTube e mostra i risultati; la usano sia il modulo "Analizza" sia il pulsante "Rifai con dati aggiornati".
+    // conProfondo = true: appena finita la ricerca, guarda subito anche dentro i canali trovati (un'unica azione).
+    async function eseguiRicerca(termine, conProfondo = false) {
       if (!termine) return false;
       if (!chiave) {
         $('key-box').open = true;
@@ -3684,8 +3692,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         salvaInArchivio(ricercaAttuale, video);
         dbSalvataId = null;
         mostraRisultati();
-        if (dbSessione && $('db-auto').checked) salvaInDb();
-        else $('db-save').hidden = !dbSessione;
+        if (conProfondo) {
+          await cercaDentroCanali();
+        } else if (dbSessione && $('db-auto').checked) {
+          salvaInDb();
+        } else {
+          $('db-save').hidden = !dbSessione;
+        }
         return true;
       } catch (err) {
         messaggio(err.message, 'error');
@@ -3697,7 +3710,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const termine = $('search-input').value.trim();
       if (!termine) return;
       $('search-btn').disabled = true;
-      try { await eseguiRicerca(termine); } finally { $('search-btn').disabled = false; }
+      try { await eseguiRicerca(termine, cpInsieme); } finally { $('search-btn').disabled = false; }
     });
 
     // Rifai subito, dalla pagina dei risultati, una ricerca aperta dal database: stessa nicchia, stessa profondità, dati di oggi

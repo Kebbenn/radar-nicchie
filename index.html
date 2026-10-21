@@ -3347,7 +3347,15 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       // se lo stesso video è già stato salvato per la stessa ricerca, tengo i numeri più recenti
       const chiaveRiga = (r) => r.ricerca.toLowerCase() + '|' + r.id;
       const nuoveChiavi = new Set(nuovi.map(chiaveRiga));
-      const ok = scrivi(K_ARCHIVIO, archivio().filter((r) => !nuoveChiavi.has(chiaveRiga(r))).concat(nuovi));
+      let unite = archivio().filter((r) => !nuoveChiavi.has(chiaveRiga(r))).concat(nuovi);
+      // con tante ricerche fatte nel tempo questo archivio locale può crescere troppo e rallentare il sito:
+      // tengo solo le righe più recenti (non tocca la regola dei 30 giorni, è solo un limite di spazio)
+      const LIMITE_ARCHIVIO = 6000;
+      if (unite.length > LIMITE_ARCHIVIO) {
+        unite.sort((a, b) => a.analizzato.localeCompare(b.analizzato));
+        unite = unite.slice(unite.length - LIMITE_ARCHIVIO);
+      }
+      const ok = scrivi(K_ARCHIVIO, unite);
       aggiornaBottoni();
       if (!ok) messaggio('La memoria del browser è piena: questa ricerca non è entrata nell\'archivio di "Scarica tutte le ricerche". ' +
         'Scarica l\'archivio e poi premi "Svuota archivio" (le ricerche nel database online non sono toccate).', 'error');
@@ -3617,9 +3625,12 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const fmt = formato || ((n) => nf.format(Math.round(n)));
       if (valore == null || !isFinite(valore)) { nodo.textContent = '—'; nodo.dataset.finale = '—'; return; }
       nodo.dataset.finale = fmt(valore);
-      if (pocoMovimento.matches) { nodo.textContent = fmt(valore); return; }
+      // appena contato (es. "Cerca più a fondo" ha appena aggiornato gli stessi numeri): salto all'ultimo valore senza ripartire da zero
+      const appenaContato = nodo.dataset.contaOra && performance.now() - (+nodo.dataset.contaOra) < 2000;
+      if (pocoMovimento.matches || appenaContato) { nodo.textContent = fmt(valore); return; }
       const durata = 900, t0 = performance.now();
       nodo.dataset.conta = String(t0);
+      nodo.dataset.contaOra = String(t0);
       const passo = (t) => {
         if (nodo.dataset.conta !== String(t0)) return;   // è partito un conteggio più nuovo
         const k = Math.min(1, (t - t0) / durata), e = 1 - Math.pow(1 - k, 3);
@@ -3643,7 +3654,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     // Blur Fade: i riquadri compaiono uno dopo l'altro
     function faiComparire(nodi) {
       if (pocoMovimento.matches) return;
+      const ora = performance.now();
       [...nodi].forEach((n, i) => {
+        // appena comparso (es. due ricalcoli di fila sulla stessa ricerca): non lo faccio sparire e riapparire di nuovo
+        if (n.dataset.appareOra && ora - (+n.dataset.appareOra) < 2000) return;
+        n.dataset.appareOra = String(ora);
         n.classList.remove('appear');
         void n.offsetWidth;
         n.style.setProperty('--i', Math.min(i, 8));

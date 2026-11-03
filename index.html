@@ -351,6 +351,9 @@
     table.storico th:first-child { position: sticky; left: 0; z-index: 2; box-shadow: 1px 0 0 var(--line); }
     table.storico .nome b { display: block; overflow-wrap: anywhere; }
     table.storico .nome small { color: var(--muted); font-size: .75rem; }
+    /* etichetta per le ricerche fatte da Claude con il motore "cerca-nicchia" */
+    .da-claude { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: .7rem; font-weight: 600;
+      color: var(--accent); border: 1px solid var(--accent); vertical-align: 2px; white-space: nowrap; }
     table.storico .azioni { display: flex; gap: 6px; justify-content: flex-end; }
     table.storico .azioni button { padding: 6px 11px; font-size: .8rem; }
     table.storico .pill { white-space: nowrap; }
@@ -4141,6 +4144,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const scaduta = !!(r.impostazioni && r.impostazioni.scaduta);
         const nomeBox = document.createElement('div'); nomeBox.className = 'nome';
         const t = document.createElement('b'); t.textContent = r.ricerca;
+        if (r.impostazioni && r.impostazioni.origine === 'claude') {
+          const et = document.createElement('span'); et.className = 'da-claude'; et.textContent = '🤖 da Claude';
+          et.title = 'Ricerca fatta da Claude per te, con la stessa ricerca del sito';
+          t.append(et);
+        }
         const quando = new Date(r.creato);
         const sm = document.createElement('small');
         sm.textContent = quando.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' }) + ' alle ' +
@@ -4278,7 +4286,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         $('db-save').hidden = true;
         statoSalvataggio('');
         messaggio('Ricerca del ' + new Date(r[0].creato).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) +
-          ' aperta dal database: nessun credito usato. I numeri sono quelli di quel giorno.', 'info');
+          ' aperta dal database: nessun credito usato. I numeri sono quelli di quel giorno.' +
+          (imp.origine === 'claude' ? ' 🤖 Questa ricerca l\'ha fatta Claude per te.' : ''), 'info');
         $('results').scrollIntoView({ behavior: pocoMovimento.matches ? 'auto' : 'smooth', block: 'start' });
       } catch (e) {
         statoDb(e.message, 'error');

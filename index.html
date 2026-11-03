@@ -1684,9 +1684,14 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     function giornoYouTube() {
       return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
     }
+    // Crediti usati fuori da questo browser (es. le ricerche fatte da Claude), letti dal database online.
+    // Se il database non risponde resta 0 e il contatore funziona come prima.
+    let creditiDb = { giorno: '', usati: 0 };
     function creditiUsati() {
       const c = leggi(K_CREDITI, null);
-      return c && c.giorno === giornoYouTube() ? c.usati : 0;
+      const locali = c && c.giorno === giornoYouTube() ? c.usati : 0;
+      const esterni = creditiDb.giorno === giornoYouTube() ? creditiDb.usati : 0;
+      return locali + esterni;
     }
     function aggiungiCrediti(n) {
       scrivi(K_CREDITI, { giorno: giornoYouTube(), usati: creditiUsati() + n });
@@ -3890,6 +3895,18 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     }
     const tokenValido = () => rinnovaToken(false);
 
+    // Crediti usati oggi fuori da questo browser (tabella "crediti_youtube"): li aggiungo al contatore in alto
+    async function caricaCreditiDb() {
+      if (!dbSessione) return;
+      try {
+        const giorno = giornoYouTube();
+        const r = await chiamaDb('/rest/v1/crediti_youtube?select=usati&giorno=eq.' + encodeURIComponent(giorno), { method: 'GET' }, true);
+        creditiDb = { giorno, usati: Array.isArray(r) && r[0] ? +r[0].usati || 0 : 0 };
+        mostraCrediti();
+      } catch (e) { /* senza database il contatore resta quello di questo browser */ }
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) caricaCreditiDb(); });
+
     function mostraDb() {
       const collegato = !!(dbConf && dbConf.url && dbConf.chiave);
       if (!collegato && !$('db-url').value) $('db-url').value = DB_URL_PREDEFINITO;
@@ -3907,6 +3924,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       if (dbSessione) {
         $('db-who').textContent = 'Connesso: ' + (dbSessione.email || 'account');
         caricaStorico();
+        caricaCreditiDb();
       } else canaliDb = [];
       if (typeof disegnaCanali === 'function') disegnaCanali();
     }

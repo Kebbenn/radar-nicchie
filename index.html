@@ -1697,7 +1697,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       return locali + esterni;
     }
     function aggiungiCrediti(n) {
-      scrivi(K_CREDITI, { giorno: giornoYouTube(), usati: creditiUsati() + n });
+      // salvo solo i crediti di questo browser: quelli di Claude arrivano già dal database (se li sommassi qui verrebbero contati due volte)
+      const c = leggi(K_CREDITI, null);
+      const locali = c && c.giorno === giornoYouTube() ? c.usati : 0;
+      scrivi(K_CREDITI, { giorno: giornoYouTube(), usati: locali + n });
       mostraCrediti();
     }
     function mostraCrediti() {

@@ -2900,7 +2900,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
     // ---------- Grafico 4: fasce di visualizzazioni ----------
     const FASCE = [
-      { nome: 'Fino a 30k', max: 3e4 },
+      { nome: '0 – 5k', max: 5e3 },
+      { nome: '5k – 10k', max: 1e4 },
+      { nome: '10k – 20k', max: 2e4 },
+      { nome: '20k – 30k', max: 3e4 },
       { nome: '30k – 50k', max: 5e4 },
       { nome: '50k – 100k', max: 1e5 },
       { nome: '100k – 500k', max: 5e5 },

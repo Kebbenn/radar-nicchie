@@ -29,6 +29,7 @@
       --spot: rgba(124, 58, 237, .08);
       --shadow: 0 1px 2px rgba(23, 20, 43, .04), 0 8px 24px -12px rgba(76, 29, 149, .18);
       --series-2: #eb6834;
+      --series-3: #0f9d8a;
       --btn-bg: #14161a;
       --btn-ink: #ffffff;
       --good: #0ca30c;
@@ -42,7 +43,7 @@
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
         --bg: #0d0b17; --surface: #16131f; --ink: #f3f1fb; --ink-2: #c2bdd8; --muted: #8f89a8;
-        --line: #2a2540; --accent: #a78bfa; --series-2: #d95926; --btn-bg: #f3f1fb; --btn-ink: #0d0b17;
+        --line: #2a2540; --accent: #a78bfa; --series-2: #d95926; --series-3: #2dd4bf; --btn-bg: #f3f1fb; --btn-ink: #0d0b17;
         --g1: #a78bfa; --g2: #f472b6; --g3: #fbbf24; --g4: #22d3ee;
         --dot: rgba(167, 139, 250, .16); --glow-1: rgba(124, 58, 237, .28); --glow-2: rgba(236, 72, 153, .18); --glow-3: rgba(6, 182, 212, .14);
         --spot: rgba(167, 139, 250, .10); --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -12px rgba(124, 58, 237, .35);
@@ -51,7 +52,7 @@
     }
     :root[data-theme="dark"] {
       --bg: #0d0b17; --surface: #16131f; --ink: #f3f1fb; --ink-2: #c2bdd8; --muted: #8f89a8;
-      --line: #2a2540; --accent: #a78bfa; --series-2: #d95926; --btn-bg: #f3f1fb; --btn-ink: #0d0b17;
+      --line: #2a2540; --accent: #a78bfa; --series-2: #d95926; --series-3: #2dd4bf; --btn-bg: #f3f1fb; --btn-ink: #0d0b17;
       --g1: #a78bfa; --g2: #f472b6; --g3: #fbbf24; --g4: #22d3ee;
       --dot: rgba(167, 139, 250, .16); --glow-1: rgba(124, 58, 237, .28); --glow-2: rgba(236, 72, 153, .18); --glow-3: rgba(6, 182, 212, .14);
       --spot: rgba(167, 139, 250, .10); --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -12px rgba(124, 58, 237, .35);
@@ -234,13 +235,28 @@
     .chg.up { color: var(--good); }
     .chg.down { color: var(--bad); }
     .chg.flat { color: var(--muted); }
-    .trend-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .trend-charts { display: grid; grid-template-columns: 1fr; gap: 16px; }
     .trend-charts > div { display: grid; gap: 8px; align-content: start; min-width: 0; }
     .trend-charts h3 { font-size: .95rem; font-weight: 600; }
     .chart .line2 { fill: none; stroke: var(--series-2); stroke-width: 2; stroke-dasharray: 5 4; }
     .chart .dot2 { fill: var(--series-2); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
     .chart .bar.partial { opacity: .45; }
     .legend i.line { height: 2px; width: 14px; border-radius: 0; background: var(--series-2); }
+    .legend-toggle { gap: 8px; }
+    .legend-toggle .lt { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); font: inherit; font-size: .8rem; cursor: pointer; opacity: .5; }
+    .legend-toggle .lt.on { opacity: 1; color: var(--ink); border-color: var(--ink-2); }
+    .legend-toggle .lt small { color: var(--muted); font-size: .72rem; }
+    .legend-toggle .lt i { width: 12px; height: 12px; flex: none; }
+    .legend-toggle .lt.sq i { background: var(--accent); border-radius: 2px; }
+    .legend-toggle .lt.ch i { background: var(--series-2); border-radius: 50%; }
+    .legend-toggle .lt.vw i { background: var(--series-3); border-radius: 50%; }
+    .legend-toggle .lt.av i { height: 0; width: 14px; border-radius: 0; background: none; border-top: 2px dashed var(--muted); }
+    .chart .line-ch { fill: none; stroke: var(--series-2); stroke-width: 2.5; }
+    .chart .dot-ch { fill: var(--series-2); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
+    .chart .line-vw { fill: none; stroke: var(--series-3); stroke-width: 2.5; }
+    .chart .dot-vw { fill: var(--series-3); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
+    .chart .line-av { stroke: var(--muted); }
+    .chart text.ax-vw { fill: var(--series-3); }
     @media (max-width: 760px) { .trend-charts { grid-template-columns: 1fr; } }
 
     /* Barra "Salva la ricerca" */
@@ -1241,16 +1257,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <p class="muted" style="font-size:.82rem" id="trend-note"></p>
           <div class="trend-charts">
             <div>
-              <h3>Shorts pubblicati nel tempo</h3>
-              <div class="legend"><span><i></i>Shorts pubblicati</span><span><i class="line"></i>Andamento (media di 3 periodi)</span></div>
-              <div class="chart" id="chart-trend-shorts"></div>
-              <h3 style="margin-top:8px">Visualizzazioni degli Shorts pubblicati</h3>
-              <div class="chart" id="chart-trend-views"></div>
-            </div>
-            <div>
-              <h3>Canali diversi che hanno pubblicato</h3>
-              <div class="legend"><span><i></i>Canali che hanno pubblicato</span></div>
-              <div class="chart" id="chart-trend-channels"></div>
+              <h3>Shorts, canali e visualizzazioni nel tempo</h3>
+              <p class="muted" style="font-size:.82rem">Tocca una voce qui sotto per mostrarla o nasconderla.</p>
+              <div class="legend legend-toggle" id="legend-trend"></div>
+              <div class="chart" id="chart-trend-combo"></div>
             </div>
           </div>
         </section>
@@ -2844,17 +2854,87 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const fin = colonne.slice(Math.max(0, i - 2), i + 1);
         return fin.reduce((a, x) => a + x.shorts, 0) / fin.length;
       });
-      graficoTempo($('chart-trend-shorts'), colonne.map((c, i) => ({
-        c, valore: c.shorts, linea: media3[i],
-        righe: [c.nome, 'Andamento: ' + nf1.format(media3[i]) + ' Shorts', c.views ? compatto(c.views) + ' visualizzazioni' : ''],
-        titolo: c.shorts + (c.shorts === 1 ? ' Short' : ' Shorts'),
-      })), { altezza: 190, etichette: nf.format });
-      graficoTempo($('chart-trend-views'), colonne.map((c) => ({
-        c, valore: c.views, righe: [c.nome, c.shorts + ' Shorts pubblicati'], titolo: compatto(c.views) + ' visualizzazioni',
-      })), { altezza: 150, etichette: compatto });
-      graficoTempo($('chart-trend-channels'), colonne.map((c) => ({
-        c, valore: c.canali, righe: [c.nome], titolo: c.canali + (c.canali === 1 ? ' canale' : ' canali'),
-      })), { altezza: $('chart-trend-channels').clientWidth < 520 ? 220 : 380, etichette: nf.format });
+      puntiCombo = colonne.map((c, i) => ({ c, shorts: c.shorts, canali: c.canali, views: c.views, media: media3[i] }));
+      disegnaCombo();
+    }
+
+    // ---------- Grafico unico: Shorts (colonne), Canali e Visualizzazioni (linee) ----------
+    let puntiCombo = [];
+    const comboVisibile = { shorts: true, canali: true, views: true, media: false };
+    const COMBO_VOCI = [
+      { k: 'shorts', nome: 'Shorts pubblicati', nota: 'colonne · scala a sinistra', cls: 'sq' },
+      { k: 'canali', nome: 'Canali diversi', nota: 'linea arancione · scala a sinistra', cls: 'ch' },
+      { k: 'views', nome: 'Visualizzazioni', nota: 'linea verde · scala a destra', cls: 'vw' },
+      { k: 'media', nome: 'Andamento Shorts', nota: 'tratteggio · media di 3 periodi', cls: 'av' },
+    ];
+    function disegnaCombo() {
+      const leg = $('legend-trend');
+      leg.replaceChildren();
+      COMBO_VOCI.forEach((v) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'lt ' + v.cls + (comboVisibile[v.k] ? ' on' : '');
+        b.setAttribute('aria-pressed', comboVisibile[v.k] ? 'true' : 'false');
+        const i = document.createElement('i');
+        const t = document.createElement('span'); t.textContent = v.nome;
+        const n = document.createElement('small'); n.textContent = v.nota;
+        b.append(i, t, n);
+        b.addEventListener('click', () => { comboVisibile[v.k] = !comboVisibile[v.k]; disegnaCombo(); });
+        leg.append(b);
+      });
+
+      const box = $('chart-trend-combo');
+      box.replaceChildren();
+      const punti = puntiCombo;
+      if (!punti.length) return;
+      const vis = comboVisibile;
+      const stretto = box.clientWidth < 520;
+      const W = Math.max(280, box.clientWidth), H = stretto ? 280 : 340;
+      const m = { t: 16, r: vis.views ? 46 : 8, b: 26, l: 44 };
+      const iw = W - m.l - m.r, ih = H - m.t - m.b;
+      const maxSx = Math.max(1, ...punti.map((p) => Math.max(vis.shorts ? p.shorts : 0, vis.canali ? p.canali : 0, vis.media ? p.media : 0)));
+      const maxMax = scalaBella(maxSx);
+      const passi = passiAsse(maxMax);
+      const maxV = Math.max(1, ...punti.map((p) => p.views));
+      const maxDx = passi * scalaBella(maxV / passi);
+      const y = (v) => m.t + ih - (v / maxMax) * ih;
+      const yd = (v) => m.t + ih - (v / maxDx) * ih;
+      const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', 'aria-label': 'Shorts, canali e visualizzazioni nel tempo' }, box);
+      for (let k = 0; k <= passi; k++) {
+        const v = maxMax / passi * k;
+        el('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: 'grid' }, svg);
+        testo(svg, m.l - 6, y(v) + 4, nf.format(Math.round(v * 10) / 10), { 'text-anchor': 'end' });
+        if (vis.views) testo(svg, W - m.r + 6, y(v) + 4, compatto(maxDx / passi * k), { 'text-anchor': 'start', class: 'ax-vw' });
+      }
+      const banda = iw / punti.length, bw = Math.min(34, banda * 0.66);
+      const ogni = banda < 34 ? 3 : banda < 52 ? 2 : 1;
+      const cx = (i) => m.l + banda * i + banda / 2;
+      punti.forEach((p, i) => {
+        const g = el('g', { class: 'bar-g', tabindex: 0 }, svg);
+        if (vis.shorts && p.shorts > 0) {
+          const top = y(p.shorts), h = m.t + ih - top, r = Math.min(4, h, bw / 2), bx = cx(i) - bw / 2;
+          el('path', { class: 'bar' + (p.c.inCorso ? ' partial' : ''), d: 'M' + bx + ',' + (top + h) + 'V' + (top + r) + 'Q' + bx + ',' + top + ' ' + (bx + r) + ',' + top +
+            'H' + (bx + bw - r) + 'Q' + (bx + bw) + ',' + top + ' ' + (bx + bw) + ',' + (top + r) + 'V' + (top + h) + 'Z' }, g);
+        }
+        if ((punti.length - 1 - i) % ogni === 0) testo(svg, cx(i), H - 6, p.c.etichetta, { 'text-anchor': 'middle' });
+        el('rect', { x: cx(i) - banda / 2, y: m.t, width: banda, height: ih, class: 'hit' }, g);
+        const info = (e) => mostraTip(e, p.c.nome, [
+          p.shorts + (p.shorts === 1 ? ' Short pubblicato' : ' Shorts pubblicati'),
+          p.canali + (p.canali === 1 ? ' canale diverso' : ' canali diversi'),
+          p.views ? compatto(p.views) + ' visualizzazioni' : '0 visualizzazioni',
+        ]);
+        g.addEventListener('pointermove', info);
+        g.addEventListener('focus', info);
+        g.addEventListener('pointerleave', nascondiTip);
+        g.addEventListener('blur', nascondiTip);
+      });
+      const linea = (f, cls) => {
+        el('path', { d: punti.map((p, i) => (i ? 'L' : 'M') + cx(i) + ',' + f(p)).join(''), class: cls }, svg);
+      };
+      const pallini = (f, cls) => punti.forEach((p, i) => el('circle', { cx: cx(i), cy: f(p), r: 3.5, class: cls }, svg));
+      if (vis.media) linea((p) => y(p.media), 'line2 line-av');
+      if (vis.canali) { linea((p) => y(p.canali), 'line-ch'); pallini((p) => y(p.canali), 'dot-ch'); }
+      if (vis.views) { linea((p) => yd(p.views), 'line-vw'); pallini((p) => yd(p.views), 'dot-vw'); }
     }
 
     // Grafico a colonne nel tempo, con linea di andamento facoltativa

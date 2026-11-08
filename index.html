@@ -242,10 +242,11 @@
     .chart .dot2 { fill: var(--series-2); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
     .chart .bar.partial { opacity: .45; }
     .legend i.line { height: 2px; width: 14px; border-radius: 0; background: var(--series-2); }
-    .chart .bar.ft-vw { fill: var(--series-3); }
-    .chart text.fascia-t { font-family: inherit; font-weight: 600; font-size: 13px; }
+    .chart .line-vw { fill: none; stroke: var(--series-3); stroke-width: 2.5; }
+    .chart .dot-vw { fill: var(--series-3); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
     .chart text.ft-sh { fill: var(--accent); }
     .chart text.ft-vw { fill: var(--series-3); }
+    .chart text.ass-t { font-family: inherit; font-weight: 600; font-size: 13px; }
     @media (max-width: 760px) { .trend-charts { grid-template-columns: 1fr; } }
 
     /* Barra "Salva la ricerca" */
@@ -1247,6 +1248,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <div class="trend-charts">
             <div>
               <h3>Shorts e visualizzazioni nel tempo</h3>
+              <div class="legend"><span><i></i>Shorts pubblicati · colonne · scala a sinistra</span><span><i class="line" style="background:var(--series-3)"></i>Visualizzazioni · linea · scala a destra</span></div>
               <div class="chart" id="chart-trend-combo"></div>
             </div>
           </div>
@@ -2844,48 +2846,45 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       disegnaFasce(colonne);
     }
 
-    // ---------- Grafico a due fasce: Shorts pubblicati e Visualizzazioni, stesso periodo, una scala per fascia ----------
+    // ---------- Grafico unico: Shorts pubblicati (colonne, scala a sinistra) e Visualizzazioni (linea, scala a destra) ----------
     function disegnaFasce(colonne) {
       const box = $('chart-trend-combo');
       box.replaceChildren();
       if (!colonne.length) return;
       const stretto = box.clientWidth < 520;
-      const W = Math.max(280, box.clientWidth);
-      const PH = stretto ? 120 : 140, titolo = 22, gap = 18;
-      const m = { l: 58, r: 8, b: 24 };
-      const H = 2 * (titolo + PH) + gap + m.b;
-      const iw = W - m.l - m.r;
+      const W = Math.max(280, box.clientWidth), H = stretto ? 300 : 340;
+      const m = { t: 34, r: 62, b: 26, l: 44 };
+      const iw = W - m.l - m.r, ih = H - m.t - m.b;
+      const maxS = scalaBella(Math.max(1, ...colonne.map((c) => c.shorts)));
+      const passi = passiAsse(maxS);
+      const maxV = passi * scalaBella(Math.max(1, ...colonne.map((c) => c.views)) / passi);
+      const y = (v) => m.t + ih - (v / maxS) * ih;
+      const yd = (v) => m.t + ih - (v / maxV) * ih;
       const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', 'aria-label': 'Shorts pubblicati e visualizzazioni nel tempo' }, box);
+      testo(svg, m.l - 6, m.t - 14, 'Shorts', { 'text-anchor': 'start', class: 'ass-t ft-sh' });
+      testo(svg, W - m.r + 6, m.t - 14, 'Visualizzazioni', { 'text-anchor': 'end', class: 'ass-t ft-vw', dx: m.r - 6 });
+      for (let k = 0; k <= passi; k++) {
+        const v = maxS / passi * k;
+        el('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: 'grid' }, svg);
+        testo(svg, m.l - 6, y(v) + 4, nf.format(Math.round(v * 10) / 10), { 'text-anchor': 'end', class: 'ft-sh' });
+        testo(svg, W - m.r + 6, y(v) + 4, compatto(maxV / passi * k), { 'text-anchor': 'start', class: 'ft-vw' });
+      }
       const banda = iw / colonne.length, bw = Math.min(34, banda * 0.66);
       const ogni = banda < 34 ? 3 : banda < 52 ? 2 : 1;
       const cx = (i) => m.l + banda * i + banda / 2;
-      const fasce = [
-        { k: 'shorts', nome: 'Shorts pubblicati', cls: 'ft-sh', f: nf.format },
-        { k: 'views', nome: 'Visualizzazioni', cls: 'ft-vw', f: compatto },
-      ];
-      fasce.forEach((fa, j) => {
-        const top = j * (titolo + PH + gap) + titolo;
-        const max = scalaBella(Math.max(1, ...colonne.map((c) => c[fa.k])));
-        const passi = passiAsse(max);
-        const y = (v) => top + PH - (v / max) * PH;
-        testo(svg, m.l, top - 8, fa.nome, { 'text-anchor': 'start', class: 'fascia-t ' + fa.cls });
-        for (let k = 0; k <= passi; k++) {
-          const v = max / passi * k;
-          el('line', { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), class: 'grid' }, svg);
-          testo(svg, m.l - 6, y(v) + 4, fa.f(Math.round(v * 10) / 10), { 'text-anchor': 'end' });
-        }
-        colonne.forEach((c, i) => {
-          if (c[fa.k] > 0) {
-            const t = y(c[fa.k]), base = top + PH, h = base - t, r = Math.min(4, h, bw / 2), bx = cx(i) - bw / 2;
-            el('path', { class: 'bar ' + fa.cls + (c.inCorso ? ' partial' : ''), d: 'M' + bx + ',' + base + 'V' + (t + r) + 'Q' + bx + ',' + t + ' ' + (bx + r) + ',' + t +
-              'H' + (bx + bw - r) + 'Q' + (bx + bw) + ',' + t + ' ' + (bx + bw) + ',' + (t + r) + 'V' + base + 'Z' }, svg);
-          }
-        });
-      });
       colonne.forEach((c, i) => {
+        if (c.shorts > 0) {
+          const t = y(c.shorts), base = m.t + ih, h = base - t, r = Math.min(4, h, bw / 2), bx = cx(i) - bw / 2;
+          el('path', { class: 'bar' + (c.inCorso ? ' partial' : ''), d: 'M' + bx + ',' + base + 'V' + (t + r) + 'Q' + bx + ',' + t + ' ' + (bx + r) + ',' + t +
+            'H' + (bx + bw - r) + 'Q' + (bx + bw) + ',' + t + ' ' + (bx + bw) + ',' + (t + r) + 'V' + base + 'Z' }, svg);
+        }
         if ((colonne.length - 1 - i) % ogni === 0) testo(svg, cx(i), H - 6, c.etichetta, { 'text-anchor': 'middle' });
+      });
+      el('path', { d: colonne.map((c, i) => (i ? 'L' : 'M') + cx(i) + ',' + yd(c.views)).join(''), class: 'line-vw' }, svg);
+      colonne.forEach((c, i) => el('circle', { cx: cx(i), cy: yd(c.views), r: 3.5, class: 'dot-vw' }, svg));
+      colonne.forEach((c, i) => {
         const g = el('g', { class: 'bar-g', tabindex: 0 }, svg);
-        el('rect', { x: cx(i) - banda / 2, y: 0, width: banda, height: H - m.b, class: 'hit' }, g);
+        el('rect', { x: cx(i) - banda / 2, y: m.t, width: banda, height: ih, class: 'hit' }, g);
         const info = (e) => mostraTip(e, c.nome, [
           c.shorts + (c.shorts === 1 ? ' Short pubblicato' : ' Shorts pubblicati'),
           c.views ? compatto(c.views) + ' visualizzazioni' : '0 visualizzazioni',

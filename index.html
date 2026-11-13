@@ -2147,10 +2147,16 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       Object.keys(b).forEach((k) => { if (!b[k] || adesso - b[k].t > BASE_VALIDA_MS) delete b[k]; });
       return b;
     }
+    // "solito" di un video: quello già scritto nel video (ricerca salvata) oppure quello in memoria del browser
+    function solitoDi(v, salvate) {
+      if (v.solito != null) return v.solito;
+      const b = (salvate || baseSalvata())[v.canaleId];
+      return b ? (b.m > 0 ? b.m : 0) : null;
+    }
     function canaliDaLeggere() {
       const salvate = baseSalvata();
       const conta = new Map();
-      videoAttuali.forEach((v) => { if (v.canaleId && !salvate[v.canaleId]) conta.set(v.canaleId, (conta.get(v.canaleId) || 0) + 1); });
+      videoAttuali.forEach((v) => { if (v.canaleId && solitoDi(v, salvate) == null) conta.set(v.canaleId, (conta.get(v.canaleId) || 0) + 1); });
       return [...conta.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]);
     }
     // legge gli ultimi 50 Shorts di un canale e ne calcola il "solito" (mediana degli Shorts usciti da almeno 7 giorni)
@@ -2198,11 +2204,17 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       testoEl.textContent = 'Leggo gli ultimi Shorts dei canali… 0 / ' + totale;
       await Promise.all([lavoratore(), lavoratore(), lavoratore(), lavoratore()]);
       scrivi(K_BASE, salvate);
+      videoAttuali.forEach((v) => { const r = solitoDi(v, salvate); if (r != null) v.solito = r; });   // il "solito" resta scritto dentro ogni video
       lavoroPG = false;
       btn.disabled = false;
       if (errore) testoEl.textContent = 'Mi sono fermato: ' + errore;
       else if (tagliati) testoEl.textContent = 'Ho letto ' + totale + ' canali. Per ' + tagliati + ' non ho abbastanza crediti oggi: li leggo domani.';
       disegnaPiccoliGrandi();
+      // se la ricerca era già nel database online, la salvo di nuovo: così il "solito" resta con lei, anche da un altro dispositivo
+      if (dbSessione && dbSalvataId && dbSalvataId !== 'ok' && totale && !errore) {
+        await salvaInDb();
+        testoEl.textContent = (tagliati ? testoEl.textContent + ' ' : '') + 'Il "solito" dei canali è stato salvato insieme alla ricerca.';
+      }
     }
     function disegnaPiccoliGrandi() {
       const box = $('chart-scatter-canali');
@@ -2231,8 +2243,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     function graficoOutlier(box, video) {
       box.replaceChildren();
       const base = baseSalvata();
-      const dati = video.filter((v) => base[v.canaleId] && base[v.canaleId].m > 0 && v.views > 0)
-        .map((v) => Object.assign({}, v, { solito: base[v.canaleId].m, mult: v.views / base[v.canaleId].m }));
+      const dati = video.filter((v) => solitoDi(v, base) > 0 && v.views > 0)
+        .map((v) => { const sl = solitoDi(v, base); return Object.assign({}, v, { solito: sl, mult: v.views / sl }); });
       if (dati.length < 5) {
         box.append(paragrafo(canaliDaLeggere().length ? 'Premi "Leggi gli ultimi 50 Shorts dei canali" per vedere il confronto.' : 'Troppo pochi video con il "solito" del canale per questo grafico.', 'empty-chart'));
         return;

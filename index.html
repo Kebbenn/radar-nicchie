@@ -2142,7 +2142,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
     // ---------- 6 · Piccoli contro grandi: due modi (iscritti oppure solito del canale) ----------
     const K_BASE = 'radar-base-canali';          // memoria del "solito" di ogni canale (mediana dei suoi ultimi 50 Shorts)
-    const BASE_VALIDA_MS = 3 * GIORNO;
+    const BASE_VALIDA_MS = 30 * GIORNO;           // come nel database: dopo 30 giorni il dato non vale più (regole YouTube)
     const OUTLIER_X = 5;                          // un video è outlier se fa almeno 5 volte il solito del suo canale
     let modoPG = 'iscritti';
     let lavoroPG = false;
@@ -2157,6 +2157,45 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       if (v.solito != null) return v.solito;
       const b = (salvate || baseSalvata())[v.canaleId];
       return b ? (b.m > 0 ? b.m : 0) : null;
+    }
+    // ---- "solito" condiviso nel database (tabella canali_solito): lo usano anche altri siti, ad esempio Radar Classifiche ----
+    let condivisoInCorso = null;
+    function sincronizzaCondivisi() {
+      if (condivisoInCorso) return condivisoInCorso;
+      condivisoInCorso = (async () => {
+        if (!dbConf) return 0;
+        const salvate = baseSalvata();
+        const ids = [...new Set(videoAttuali.map((v) => v.canaleId).filter((id) => id && /^UC[\w-]{22}$/.test(id)))];
+        let nuovi = 0;
+        const nelDb = new Set();
+        for (let i = 0; i < ids.length; i += 100) {
+          const parte = ids.slice(i, i + 100);
+          const r = await chiamaDb('/rest/v1/canali_solito?select=canale_id,solito,n,letto_il&canale_id=in.(' + parte.join(',') + ')', { method: 'GET' }, false);
+          (Array.isArray(r) ? r : []).forEach((x) => {
+            const t = Date.parse(x.letto_il);
+            if (x.canale_id) nelDb.add(x.canale_id);
+            if (x.canale_id && t && !salvate[x.canale_id]) { salvate[x.canale_id] = { m: x.solito > 0 ? +x.solito : null, n: x.n || 0, t }; nuovi++; }
+          });
+        }
+        if (nuovi) scrivi(K_BASE, salvate);
+        // i canali che hai già letto qui ma che nel database mancano (anche da giorni) li copio lì: così li vede anche Radar Classifiche
+        const daCopiare = {};
+        ids.forEach((id) => { if (!nelDb.has(id) && salvate[id]) daCopiare[id] = salvate[id]; });
+        if (Object.keys(daCopiare).length) condividiLetti(daCopiare);
+        return nuovi;
+      })().catch(() => 0).finally(() => { condivisoInCorso = null; });
+      return condivisoInCorso;
+    }
+    // scrive nel database i canali appena letti (solo se hai fatto l'accesso; un dato già presente non viene toccato)
+    async function condividiLetti(letti) {
+      if (!dbConf || !dbSessione) return;
+      const riga = Object.entries(letti).filter(([id, b]) => /^UC[\w-]{22}$/.test(id) && b && Date.now() - b.t < 29 * GIORNO)
+        .map(([id, b]) => ({ canale_id: id, solito: b.m > 0 ? b.m : null, n: Math.min(50, b.n || 0), letto_il: new Date(b.t).toISOString() }));
+      for (let i = 0; i < riga.length; i += 100) {
+        const corpo = JSON.stringify(riga.slice(i, i + 100));
+        try { await chiamaDb('/rest/v1/canali_solito?on_conflict=canale_id', { method: 'POST', body: corpo, headers: { Prefer: 'resolution=merge-duplicates,return=minimal' } }, true); }
+        catch (e) { try { await chiamaDb('/rest/v1/canali_solito?on_conflict=canale_id', { method: 'POST', body: corpo, headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' } }, true); } catch (e2) { /* non è grave: resta nel browser */ } }
+      }
     }
     function canaliDaLeggere() {
       const salvate = baseSalvata();
@@ -2190,18 +2229,21 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       lavoroPG = true;
       const btn = $('pg-avvia'), testoEl = $('pg-avvio-testo');
       btn.disabled = true;
+      $('pg-avvio-testo').textContent = 'Controllo i canali già letti nel database…';
+      await sincronizzaCondivisi();
       let coda = canaliDaLeggere();
       const margine = Math.floor((CREDITI_GIORNO - creditiUsati() - 300) / 2);
       const tagliati = Math.max(0, coda.length - Math.max(0, margine));
       if (tagliati) coda = coda.slice(0, Math.max(0, margine));
       const salvate = baseSalvata();
+      const letti = {};
       let fatti = 0, errore = '';
       const totale = coda.length;
       const lavoratore = async () => {
         while (coda.length && !errore) {
           const id = coda.shift();
-          try { salvate[id] = await leggiBaseCanale(id); }
-          catch (e) { if (/crediti|chiave|API|collegarmi/.test(e.message)) errore = e.message; else salvate[id] = { m: null, n: 0, t: Date.now() }; }
+          try { salvate[id] = letti[id] = await leggiBaseCanale(id); }
+          catch (e) { if (/crediti|chiave|API|collegarmi/.test(e.message)) errore = e.message; else salvate[id] = letti[id] = { m: null, n: 0, t: Date.now() }; }
           fatti++;
           testoEl.textContent = 'Leggo gli ultimi Shorts dei canali… ' + fatti + ' / ' + totale;
         }
@@ -2209,6 +2251,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       testoEl.textContent = 'Leggo gli ultimi Shorts dei canali… 0 / ' + totale;
       await Promise.all([lavoratore(), lavoratore(), lavoratore(), lavoratore()]);
       scrivi(K_BASE, salvate);
+      condividiLetti(letti);
       videoAttuali.forEach((v) => { const r = solitoDi(v, salvate); if (r != null) v.solito = r; });   // il "solito" resta scritto dentro ogni video
       lavoroPG = false;
       btn.disabled = false;
@@ -3887,6 +3930,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       settimaneNuoviAttuali = settimaneCanaliNuovi(videoAttuali);
       $('intro').hidden = true;
       $('results').hidden = false;
+      // i canali già letti da te (anche da un altro dispositivo) arrivano dal database, senza spendere crediti
+      sincronizzaCondivisi().then((n) => { if (n) { tabella(); disegnaPiccoliGrandi(); } });
       const viral = calcolaSegnali(videoAttuali, settimaneAttuali);
       const opp = calcolaOpportunita(videoAttuali);
       const rep = calcolaReplicabilita(videoAttuali);

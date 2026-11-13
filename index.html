@@ -3588,12 +3588,16 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     ];
     function riepilogoOutlier() {
       const box = $('riepilogo-outlier');
-      const soglia = +$('tf-solito').value || 0;
+      const filtro = +$('tf-solito').value || 0;
+      // Ricerca salvata aperta dal database: se il "solito" è già dentro, mostro il riquadro anche senza filtro (soglia ×5)
+      const daArchivio = !filtro && origineRicerca === 'db';
+      const soglia = filtro || (daArchivio ? OUTLIER_X : 0);
       box.replaceChildren();
       if (!soglia) { box.hidden = true; return; }
-      box.hidden = false;
       const salvate = baseSalvata();
       const dati = videoAttuali.map((v) => { const sl = solitoDi(v, salvate); return sl > 0 && v.views > 0 ? { v, sl, x: v.views / sl } : null; }).filter(Boolean);
+      if (daArchivio && dati.length < 5) { box.hidden = true; return; }
+      box.hidden = false;
       if (dati.length < 5) {
         const p = document.createElement('p'); p.className = 'muted'; p.style.cssText = 'font-size:.9rem;margin:6px 0 12px';
         p.textContent = 'Per vedere quanti video sono outlier devo conoscere il "solito" dei canali (gli ultimi 50 Shorts di ciascuno). Costa crediti, quindi lo leggo solo se premi il pulsante nella sezione 6. ';

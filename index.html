@@ -30,6 +30,7 @@
       --shadow: 0 1px 2px rgba(23, 20, 43, .04), 0 8px 24px -12px rgba(76, 29, 149, .18);
       --series-2: #eb6834;
       --series-3: #0f9d8a;
+      --f0: #cdbcff; --f1: #a688fa; --f2: #7c4ee8; --f3: #4f24b3; --f4: #9a96a8;
       --btn-bg: #14161a;
       --btn-ink: #ffffff;
       --good: #0ca30c;
@@ -43,7 +44,7 @@
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
         --bg: #0d0b17; --surface: #16131f; --ink: #f3f1fb; --ink-2: #c2bdd8; --muted: #8f89a8;
-        --line: #2a2540; --accent: #a78bfa; --series-2: #d95926; --series-3: #2dd4bf; --btn-bg: #f3f1fb; --btn-ink: #0d0b17;
+        --line: #2a2540; --accent: #a78bfa; --series-2: #d95926; --series-3: #2dd4bf; --f0: #e4d9ff; --f1: #b99dff; --f2: #8656f0; --f3: #5b2fc4; --f4: #6f6c80; --btn-bg: #f3f1fb; --btn-ink: #0d0b17;
         --g1: #a78bfa; --g2: #f472b6; --g3: #fbbf24; --g4: #22d3ee;
         --dot: rgba(167, 139, 250, .16); --glow-1: rgba(124, 58, 237, .28); --glow-2: rgba(236, 72, 153, .18); --glow-3: rgba(6, 182, 212, .14);
         --spot: rgba(167, 139, 250, .10); --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -12px rgba(124, 58, 237, .35);
@@ -52,7 +53,7 @@
     }
     :root[data-theme="dark"] {
       --bg: #0d0b17; --surface: #16131f; --ink: #f3f1fb; --ink-2: #c2bdd8; --muted: #8f89a8;
-      --line: #2a2540; --accent: #a78bfa; --series-2: #d95926; --series-3: #2dd4bf; --btn-bg: #f3f1fb; --btn-ink: #0d0b17;
+      --line: #2a2540; --accent: #a78bfa; --series-2: #d95926; --series-3: #2dd4bf; --f0: #e4d9ff; --f1: #b99dff; --f2: #8656f0; --f3: #5b2fc4; --f4: #6f6c80; --btn-bg: #f3f1fb; --btn-ink: #0d0b17;
       --g1: #a78bfa; --g2: #f472b6; --g3: #fbbf24; --g4: #22d3ee;
       --dot: rgba(167, 139, 250, .16); --glow-1: rgba(124, 58, 237, .28); --glow-2: rgba(236, 72, 153, .18); --glow-3: rgba(6, 182, 212, .14);
       --spot: rgba(167, 139, 250, .10); --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px -12px rgba(124, 58, 237, .35);
@@ -242,6 +243,14 @@
     .chart .dot2 { fill: var(--series-2); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
     .chart .bar.partial { opacity: .45; }
     .legend i.line { height: 2px; width: 14px; border-radius: 0; background: var(--series-2); }
+    .chart .seg { stroke: var(--surface); stroke-width: 1; }
+    .chart .seg.partial { opacity: .55; }
+    .tip { max-width: 320px; }
+    .tip .tt { display: grid; grid-template-columns: 1fr auto auto; gap: 3px 14px; margin-top: 8px; font-size: .78rem; align-items: center; }
+    .tip .tt .h { opacity: .65; font-size: .7rem; }
+    .tip .tt .n { text-align: right; font-weight: 600; }
+    .tip .tt i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(128,128,128,.35); }
+    .tip .best { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(128,128,128,.35); font-size: .74rem; opacity: .8; }
     .chart .line-vw { fill: none; stroke: var(--series-3); stroke-width: 2.5; }
     .chart .dot-vw { fill: var(--series-3); stroke: var(--surface); stroke-width: 1.5; pointer-events: none; }
     .chart text.ft-sh { fill: var(--accent); }
@@ -1248,7 +1257,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <div class="trend-charts">
             <div>
               <h3>Shorts e visualizzazioni nel tempo</h3>
-              <div class="legend"><span><i></i>Shorts pubblicati · colonne · scala a sinistra</span><span><i class="line" style="background:var(--series-3)"></i>Visualizzazioni · linea · scala a destra</span></div>
+              <div class="legend" id="legend-fasce"></div>
+              <p class="muted" style="font-size:.8rem;margin:4px 0 0">Ogni colonna è divisa per grandezza del canale (scala Shorts a sinistra). La linea verde sono le visualizzazioni (scala a destra).</p>
               <div class="chart" id="chart-trend-combo"></div>
             </div>
           </div>
@@ -2585,12 +2595,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
     // ---------- Tooltip ----------
     const tip = $('tip');
-    function mostraTip(e, valore, righe) {
+    function mostraTip(e, valore, righe, extra) {
       tip.replaceChildren();
       const b = document.createElement('b');
       b.textContent = valore;
       tip.append(b);
       righe.forEach((r) => { const d = document.createElement('div'); d.textContent = r; tip.append(d); });
+      if (extra) extra(tip);
       tip.hidden = false;
       let x, y;
       if (e.clientX != null && e.type !== 'focus') { x = e.clientX; y = e.clientY; }
@@ -2837,7 +2848,14 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       // grafici
       const colonne = colonneTempo(periodo).map((c) => {
         const dentro = dati.filter((v) => v.data >= c.inizio && v.data < c.fine);
-        return Object.assign(c, { shorts: dentro.length, views: somma(dentro), canali: canaliDi(dentro) });
+        const fs = [0, 0, 0, 0, 0], fv = [0, 0, 0, 0, 0];
+        let migliore = null;
+        dentro.forEach((v) => {
+          const f = fasciaDi(v.iscritti);
+          fs[f]++; fv[f] += v.views;
+          if (!migliore || v.views > migliore.views) migliore = v;
+        });
+        return Object.assign(c, { shorts: dentro.length, views: somma(dentro), canali: canaliDi(dentro), fs, fv, migliore });
       });
       const media3 = colonne.map((c, i) => {
         const fin = colonne.slice(Math.max(0, i - 2), i + 1);
@@ -2846,8 +2864,18 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       disegnaFasce(colonne);
     }
 
-    // ---------- Grafico unico: Shorts pubblicati (colonne, scala a sinistra) e Visualizzazioni (linea, scala a destra) ----------
+    // ---------- Grafico unico: Shorts per grandezza del canale (colonne, scala a sinistra) e Visualizzazioni (linea, scala a destra) ----------
+    const FASCE_CANALE = [
+      { nome: 'Sotto 10k', v: 'var(--f0)' }, { nome: '10k – 100k', v: 'var(--f1)' }, { nome: '100k – 1 Mln', v: 'var(--f2)' },
+      { nome: 'Oltre 1 Mln', v: 'var(--f3)' }, { nome: 'Iscritti nascosti', v: 'var(--f4)' },
+    ];
+    function fasciaDi(isc) { return isc == null ? 4 : isc < 1e4 ? 0 : isc < 1e5 ? 1 : isc < 1e6 ? 2 : 3; }
     function disegnaFasce(colonne) {
+      const leg = $('legend-fasce');
+      leg.replaceChildren();
+      FASCE_CANALE.forEach((f) => { const sp = document.createElement('span'), i = document.createElement('i'); i.style.background = f.v; sp.append(i, f.nome); leg.append(sp); });
+      { const sp = document.createElement('span'), i = document.createElement('i'); i.className = 'line'; i.style.background = 'var(--series-3)'; sp.append(i, 'Visualizzazioni'); leg.append(sp); }
+
       const box = $('chart-trend-combo');
       box.replaceChildren();
       if (!colonne.length) return;
@@ -2860,7 +2888,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const maxV = passi * scalaBella(Math.max(1, ...colonne.map((c) => c.views)) / passi);
       const y = (v) => m.t + ih - (v / maxS) * ih;
       const yd = (v) => m.t + ih - (v / maxV) * ih;
-      const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', 'aria-label': 'Shorts pubblicati e visualizzazioni nel tempo' }, box);
+      const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', 'aria-label': 'Shorts per grandezza del canale e visualizzazioni nel tempo' }, box);
       testo(svg, m.l - 6, m.t - 14, 'Shorts', { 'text-anchor': 'start', class: 'ass-t ft-sh' });
       testo(svg, W - m.r + 6, m.t - 14, 'Visualizzazioni', { 'text-anchor': 'end', class: 'ass-t ft-vw', dx: m.r - 6 });
       for (let k = 0; k <= passi; k++) {
@@ -2873,11 +2901,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const ogni = banda < 34 ? 3 : banda < 52 ? 2 : 1;
       const cx = (i) => m.l + banda * i + banda / 2;
       colonne.forEach((c, i) => {
-        if (c.shorts > 0) {
-          const t = y(c.shorts), base = m.t + ih, h = base - t, r = Math.min(4, h, bw / 2), bx = cx(i) - bw / 2;
-          el('path', { class: 'bar' + (c.inCorso ? ' partial' : ''), d: 'M' + bx + ',' + base + 'V' + (t + r) + 'Q' + bx + ',' + t + ' ' + (bx + r) + ',' + t +
-            'H' + (bx + bw - r) + 'Q' + (bx + bw) + ',' + t + ' ' + (bx + bw) + ',' + (t + r) + 'V' + base + 'Z' }, svg);
-        }
+        let base = m.t + ih;
+        c.fs.forEach((n, f) => {
+          if (!n) return;
+          const h = (n / maxS) * ih;
+          el('rect', { x: cx(i) - bw / 2, y: base - h, width: bw, height: h, class: 'seg' + (c.inCorso ? ' partial' : ''), style: 'fill:' + FASCE_CANALE[f].v }, svg);
+          base -= h;
+        });
         if ((colonne.length - 1 - i) % ogni === 0) testo(svg, cx(i), H - 6, c.etichetta, { 'text-anchor': 'middle' });
       });
       el('path', { d: colonne.map((c, i) => (i ? 'L' : 'M') + cx(i) + ',' + yd(c.views)).join(''), class: 'line-vw' }, svg);
@@ -2886,9 +2916,26 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const g = el('g', { class: 'bar-g', tabindex: 0 }, svg);
         el('rect', { x: cx(i) - banda / 2, y: m.t, width: banda, height: ih, class: 'hit' }, g);
         const info = (e) => mostraTip(e, c.nome, [
-          c.shorts + (c.shorts === 1 ? ' Short pubblicato' : ' Shorts pubblicati'),
-          c.views ? compatto(c.views) + ' visualizzazioni' : '0 visualizzazioni',
-        ]);
+          c.shorts + (c.shorts === 1 ? ' Short' : ' Shorts') + ' · ' + (c.views ? compatto(c.views) : '0') + ' visualizzazioni',
+        ], (tip) => {
+          if (!c.shorts) return;
+          const t = document.createElement('div'); t.className = 'tt';
+          ['Fascia di canale', 'Shorts', 'Visualizz.'].forEach((h, k) => { const d = document.createElement('div'); d.className = 'h' + (k ? ' n' : ''); d.textContent = h; t.append(d); });
+          FASCE_CANALE.forEach((f, k) => {
+            if (!c.fs[k]) return;
+            const a = document.createElement('div'), i = document.createElement('i'); i.style.background = f.v; a.append(i, f.nome);
+            const n1 = document.createElement('div'); n1.className = 'n'; n1.textContent = nf.format(c.fs[k]);
+            const n2 = document.createElement('div'); n2.className = 'n'; n2.textContent = compatto(c.fv[k]);
+            t.append(a, n1, n2);
+          });
+          tip.append(t);
+          if (c.migliore) {
+            const m2 = c.migliore, d = document.createElement('div'); d.className = 'best';
+            const nome = m2.canale.length > 28 ? m2.canale.slice(0, 27) + '…' : m2.canale;
+            d.textContent = 'Video migliore: ' + nome + (m2.iscritti != null ? ' (' + compatto(m2.iscritti) + ' iscritti)' : ' (iscritti nascosti)') + ' · ' + compatto(m2.views);
+            tip.append(d);
+          }
+        });
         g.addEventListener('pointermove', info);
         g.addEventListener('focus', info);
         g.addEventListener('pointerleave', nascondiTip);

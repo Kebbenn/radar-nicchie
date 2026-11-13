@@ -1317,10 +1317,18 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <section class="card wide">
             <div class="card-head">
               <span class="label">6 · Piccoli contro grandi</span>
-              <h2>Chi fa più visualizzazioni di quanti iscritti ha</h2>
-              <p>Ogni pallino è un canale: a destra quanti iscritti ha, in alto quante visualizzazioni fa di solito su questo argomento. Sopra la riga, il canale fa più visualizzazioni degli iscritti che ha.</p>
+              <h2 id="pg-titolo">Chi fa più visualizzazioni di quanti iscritti ha</h2>
+              <p id="pg-testo">Ogni pallino è un canale: a destra quanti iscritti ha, in alto quante visualizzazioni fa di solito su questo argomento. Sopra la riga, il canale fa più visualizzazioni degli iscritti che ha.</p>
             </div>
-            <div class="legend"><span><i class="round"></i>Sopra la riga (sovraperforma)</span><span><i class="round old"></i>Sotto la riga</span></div>
+            <div class="seg" id="pg-toggle" style="margin:6px 0 10px">
+              <button type="button" data-pg="iscritti" aria-pressed="true">Confronta con gli iscritti</button>
+              <button type="button" data-pg="solito" aria-pressed="false">Confronta con il solito del canale</button>
+            </div>
+            <div class="legend" id="pg-legenda"><span><i class="round"></i>Sopra la riga (sovraperforma)</span><span><i class="round old"></i>Sotto la riga</span></div>
+            <div id="pg-avvio" hidden style="margin:8px 0 12px; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:var(--bg)">
+              <p id="pg-avvio-testo" style="margin:0 0 10px; font-size:.9rem"></p>
+              <button type="button" id="pg-avvia">Leggi gli ultimi 50 Shorts dei canali</button>
+            </div>
             <div class="chart" id="chart-scatter-canali"></div>
           </section>
 
@@ -2125,6 +2133,158 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         hit.addEventListener('blur', nascondiTip);
       });
     }
+
+
+    // ---------- 6 · Piccoli contro grandi: due modi (iscritti oppure solito del canale) ----------
+    const K_BASE = 'radar-base-canali';          // memoria del "solito" di ogni canale (mediana dei suoi ultimi 50 Shorts)
+    const BASE_VALIDA_MS = 3 * GIORNO;
+    const OUTLIER_X = 5;                          // un video è outlier se fa almeno 5 volte il solito del suo canale
+    let modoPG = 'iscritti';
+    let lavoroPG = false;
+    function baseSalvata() {
+      const b = leggi(K_BASE, {}) || {};
+      const adesso = Date.now();
+      Object.keys(b).forEach((k) => { if (!b[k] || adesso - b[k].t > BASE_VALIDA_MS) delete b[k]; });
+      return b;
+    }
+    function canaliDaLeggere() {
+      const salvate = baseSalvata();
+      const conta = new Map();
+      videoAttuali.forEach((v) => { if (v.canaleId && !salvate[v.canaleId]) conta.set(v.canaleId, (conta.get(v.canaleId) || 0) + 1); });
+      return [...conta.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]);
+    }
+    // legge gli ultimi 50 Shorts di un canale e ne calcola il "solito" (mediana degli Shorts usciti da almeno 7 giorni)
+    async function leggiBaseCanale(canaleId) {
+      let ids = [];
+      try { ids = await idsPlaylist('UUSH' + canaleId.slice(2), 50); } catch (e) { if (/crediti|chiave|API/.test(e.message)) throw e; }
+      let controllaDurata = false;
+      if (!ids.length) {
+        try { ids = await idsPlaylist('UU' + canaleId.slice(2), 50); controllaDurata = true; } catch (e) { if (/crediti|chiave|API/.test(e.message)) throw e; }
+      }
+      if (!ids.length) return { m: null, n: 0, t: Date.now() };
+      const d = await chiama('videos', {
+        part: 'snippet,statistics,contentDetails', id: ids.join(','),
+        fields: 'items(id,snippet/publishedAt,statistics/viewCount,contentDetails/duration)',
+      }, 1);
+      const adesso = Date.now();
+      const views = (d.items || [])
+        .filter((v) => v.statistics && v.statistics.viewCount != null)
+        .filter((v) => { if (!controllaDurata) return true; const du = durataSecondi(v.contentDetails && v.contentDetails.duration); return du != null && du > 0 && du <= DURATA_MAX_SHORT; })
+        .filter((v) => (adesso - new Date(v.snippet.publishedAt).getTime()) / GIORNO >= RECENTE_MIN)
+        .map((v) => +v.statistics.viewCount);
+      return { m: views.length >= 5 ? mediana(views) : null, n: views.length, t: adesso };
+    }
+    async function avviaLetturaBase() {
+      if (lavoroPG) return;
+      lavoroPG = true;
+      const btn = $('pg-avvia'), testoEl = $('pg-avvio-testo');
+      btn.disabled = true;
+      let coda = canaliDaLeggere();
+      const margine = Math.floor((CREDITI_GIORNO - creditiUsati() - 300) / 2);
+      const tagliati = Math.max(0, coda.length - Math.max(0, margine));
+      if (tagliati) coda = coda.slice(0, Math.max(0, margine));
+      const salvate = baseSalvata();
+      let fatti = 0, errore = '';
+      const totale = coda.length;
+      const lavoratore = async () => {
+        while (coda.length && !errore) {
+          const id = coda.shift();
+          try { salvate[id] = await leggiBaseCanale(id); }
+          catch (e) { if (/crediti|chiave|API|collegarmi/.test(e.message)) errore = e.message; else salvate[id] = { m: null, n: 0, t: Date.now() }; }
+          fatti++;
+          testoEl.textContent = 'Leggo gli ultimi Shorts dei canali… ' + fatti + ' / ' + totale;
+        }
+      };
+      testoEl.textContent = 'Leggo gli ultimi Shorts dei canali… 0 / ' + totale;
+      await Promise.all([lavoratore(), lavoratore(), lavoratore(), lavoratore()]);
+      scrivi(K_BASE, salvate);
+      lavoroPG = false;
+      btn.disabled = false;
+      if (errore) testoEl.textContent = 'Mi sono fermato: ' + errore;
+      else if (tagliati) testoEl.textContent = 'Ho letto ' + totale + ' canali. Per ' + tagliati + ' non ho abbastanza crediti oggi: li leggo domani.';
+      disegnaPiccoliGrandi();
+    }
+    function disegnaPiccoliGrandi() {
+      const box = $('chart-scatter-canali');
+      document.querySelectorAll('#pg-toggle [data-pg]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pg === modoPG)));
+      const avvio = $('pg-avvio');
+      if (modoPG === 'iscritti') {
+        $('pg-titolo').textContent = 'Chi fa più visualizzazioni di quanti iscritti ha';
+        $('pg-testo').textContent = 'Ogni pallino è un canale: a destra quanti iscritti ha, in alto quante visualizzazioni fa di solito su questo argomento. Sopra la riga, il canale fa più visualizzazioni degli iscritti che ha.';
+        $('pg-legenda').innerHTML = '<span><i class="round"></i>Sopra la riga (sovraperforma)</span><span><i class="round old"></i>Sotto la riga</span>';
+        avvio.hidden = true;
+        graficoPiccoliGrandi(box, videoAttuali);
+        return;
+      }
+      $('pg-titolo').textContent = 'Chi fa più del solito del proprio canale';
+      $('pg-testo').textContent = 'Ogni pallino è un video: a destra quanto fa di solito il suo canale (mediana dei suoi ultimi 50 Shorts), in alto quante visualizzazioni ha fatto lui. Sopra la linea ×' + OUTLIER_X + ' è un outlier.';
+      $('pg-legenda').innerHTML = '<span><i class="round"></i>Outlier (×' + OUTLIER_X + ' o più)</span><span><i class="round old"></i>Nella norma</span>';
+      const da = canaliDaLeggere();
+      if (da.length && !lavoroPG) {
+        const rimasti = CREDITI_GIORNO - creditiUsati();
+        avvio.hidden = false;
+        $('pg-avvio-testo').textContent = 'Per confrontare ogni video con il solito del suo canale devo leggere gli ultimi 50 Shorts di ' + nf.format(da.length) + (da.length === 1 ? ' canale' : ' canali') +
+          '. Costa circa ' + nf.format(da.length * 2) + ' crediti (oggi ne restano ' + nf.format(Math.max(0, rimasti)) + ').';
+      } else if (!da.length) avvio.hidden = true;
+      graficoOutlier(box, videoAttuali);
+    }
+    function graficoOutlier(box, video) {
+      box.replaceChildren();
+      const base = baseSalvata();
+      const dati = video.filter((v) => base[v.canaleId] && base[v.canaleId].m > 0 && v.views > 0)
+        .map((v) => Object.assign({}, v, { solito: base[v.canaleId].m, mult: v.views / base[v.canaleId].m }));
+      if (dati.length < 5) {
+        box.append(paragrafo(canaliDaLeggere().length ? 'Premi "Leggi gli ultimi 50 Shorts dei canali" per vedere il confronto.' : 'Troppo pochi video con il "solito" del canale per questo grafico.', 'empty-chart'));
+        return;
+      }
+      const out = dati.filter((v) => v.mult >= OUTLIER_X).sort((a, b) => b.mult - a.mult);
+      const riga = document.createElement('p'); riga.className = 'big-line';
+      const b = document.createElement('b'); b.textContent = out.length + ' su ' + dati.length;
+      riga.append(b, ' video sono outlier (×' + OUTLIER_X + ' o più il solito del loro canale, il ' + Math.round(out.length / dati.length * 100) + '%).' +
+        (out.length ? ' Il più forte fa ×' + nf.format(Math.round(out[0].mult)) + ' (' + compatto(out[0].views) + ' contro ' + compatto(out[0].solito) + '); l\'outlier tipico fa ×' + nf.format(Math.round(mediana(out.map((v) => v.mult)))) + '.' : ''));
+      box.append(riga);
+      const senza = new Set(video.map((v) => v.canaleId)).size - new Set(dati.map((v) => v.canaleId)).size;
+      if (senza > 0) box.append(paragrafo(senza + (senza === 1 ? ' canale non compare' : ' canali non compaiono') + ': non ha abbastanza Shorts per calcolare il suo "solito".', 'muted'));
+
+      const W = Math.max(280, box.clientWidth), H = 340;
+      const m = { t: 12, r: 16, b: 34, l: 50 };
+      const iw = W - m.l - m.r, ih = H - m.t - m.b;
+      const valori = dati.flatMap((v) => [v.views, v.solito]);
+      const lo = Math.floor(Math.log10(Math.max(1, Math.min(...valori))));
+      const hi = Math.max(lo + 1, Math.ceil(Math.log10(Math.max(...valori, Math.max(...dati.map((v) => v.solito)) * OUTLIER_X))));
+      const x = (v) => m.l + ((Math.log10(Math.max(1, v)) - lo) / (hi - lo)) * iw;
+      const y = (v) => m.t + ih - ((Math.log10(Math.max(1, v)) - lo) / (hi - lo)) * ih;
+      const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, height: H, role: 'img', 'aria-label': 'Visualizzazioni di ogni video contro il solito del suo canale' }, box);
+      const passo = hi - lo > 5 ? 2 : 1;
+      for (let q = lo; q <= hi; q += passo) {
+        const val = Math.pow(10, q);
+        el('line', { x1: m.l, x2: W - m.r, y1: y(val), y2: y(val), class: 'grid' }, svg);
+        testo(svg, m.l - 6, y(val) + 4, compatto(val), { 'text-anchor': 'end' });
+        el('line', { x1: x(val), x2: x(val), y1: m.t, y2: m.t + ih, class: 'grid' }, svg);
+        testo(svg, x(val), H - 18, compatto(val), { 'text-anchor': 'middle' });
+      }
+      testo(svg, m.l + iw / 2, H - 3, W < 520 ? 'Solito del canale' : 'Solito del canale (mediana dei suoi ultimi 50 Shorts)', { 'text-anchor': 'middle' });
+      const xMax = Math.pow(10, hi), xMin = Math.pow(10, lo);
+      el('line', { x1: x(xMin), y1: y(xMin), x2: x(xMax), y2: y(xMax), class: 'mark-line' }, svg);
+      // linea ×5: la taglio dove esce dal grafico
+      const xFine = Math.min(xMax, xMax / OUTLIER_X);
+      const lx = el('line', { x1: x(xMin), y1: y(xMin * OUTLIER_X), x2: x(xFine), y2: y(xFine * OUTLIER_X), stroke: 'var(--series-3)', 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }, svg);
+      testo(svg, x(xFine) - 6, Math.max(m.t + 12, y(xFine * OUTLIER_X) - 6), '×' + OUTLIER_X + ' · outlier', { 'text-anchor': 'end', style: 'fill:var(--series-3);font-weight:600' });
+      [...dati].sort((p, q) => p.mult - q.mult).forEach((v) => {
+        const cx = x(v.solito), cy = y(v.views), o = v.mult >= OUTLIER_X;
+        const link = el('a', { href: 'https://www.youtube.com/shorts/' + encodeURIComponent(v.id), target: '_blank', rel: 'noopener' }, svg);
+        const hit = el('circle', { cx, cy, r: 11, class: 'hit', tabindex: 0 }, link);
+        el('circle', { cx, cy, r: o ? 5.5 : 4, class: 'dot' + (o ? '' : ' old'), stroke: 'var(--surface)', 'stroke-width': 1.5 }, link);
+        const info = (e) => mostraTip(e, compatto(v.views) + ' visualizzazioni', [v.canale + (v.iscritti != null ? ' · ' + compatto(v.iscritti) + ' iscritti' : ''),
+          'Solito del canale: ' + compatto(v.solito), v.mult >= 1 ? '×' + nf1.format(v.mult) + ' il solito del canale' : nf1.format(v.mult) + ' volte il solito del canale']);
+        hit.addEventListener('pointermove', info);
+        hit.addEventListener('focus', info);
+        hit.addEventListener('pointerleave', nascondiTip);
+        hit.addEventListener('blur', nascondiTip);
+      });
+    }
+    document.querySelectorAll('#pg-toggle [data-pg]').forEach((b) => b.addEventListener('click', () => { modoPG = b.dataset.pg; disegnaPiccoliGrandi(); }));
+    $('pg-avvia').addEventListener('click', avviaLetturaBase);
 
     // 9. Si sta saturando? Confronto gli ultimi 3 mesi con i 3 mesi prima (senza gli Shorts degli ultimi 7 giorni)
     function saturazione(video) {
@@ -3630,7 +3790,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       graficoVelocita($('chart-speed'), videoAttuali);
       graficoFasce($('chart-size'), videoAttuali);
       mostraTrend(videoAttuali);
-      graficoPiccoliGrandi($('chart-scatter-canali'), videoAttuali);
+      disegnaPiccoliGrandi();
       graficoCostanza($('consistency'), videoAttuali);
       graficoDurata($('chart-duration'), $('duration-text'), videoAttuali);
       graficoSettimane($('chart-weeks-new'), settimaneNuoviAttuali, 'Canali nuovi per settimana');

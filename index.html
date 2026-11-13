@@ -1180,6 +1180,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             <select id="tf-vpd" aria-label="Visualizzazioni al giorno minime"><option value="0">Tutte</option><option value="1000">1k o più</option><option value="10000">10k o più</option><option value="100000">100k o più</option></select></label>
           <label class="field"><span class="label">Volte gli iscritti, minimo</span>
             <select id="tf-rapporto" aria-label="Volte gli iscritti, minimo"><option value="0">Tutti</option><option value="1">×1 o più</option><option value="3">×3 o più</option><option value="10">×10 o più</option></select></label>
+          <label class="field"><span class="label">Volte il solito del canale, minimo</span>
+            <select id="tf-solito" aria-label="Volte il solito del canale, minimo"><option value="0">Tutti</option><option value="2">×2 o più</option><option value="5">×5 o più (outlier)</option><option value="10">×10 o più</option></select></label>
           <button id="tf-ricalcola" class="shimmer" type="button" disabled>Ricalcola solo su questi</button>
           <button id="tf-reset" class="btn-link" type="button">Togli i filtri</button>
           <button id="tf-ripristina" class="btn-link" type="button" hidden>↺ Mostra di nuovo tutti gli Shorts</button>
@@ -1445,6 +1447,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             </div>
           </div>
           <p class="muted" style="font-size:.85rem">Il file si apre con Excel o Fogli Google. Premi i titoli delle colonne per ordinare.</p>
+          <div id="riepilogo-outlier" hidden></div>
           <div class="table-box">
             <table>
               <thead>
@@ -1454,6 +1457,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
                   <th class="r"><button type="button" data-sort="views">Visualizzazioni</button></th>
                   <th class="r"><button type="button" data-sort="vpd">Al giorno</button></th>
                   <th class="r"><button type="button" data-sort="rapporto">× iscritti</button></th>
+                  <th class="r"><button type="button" data-sort="solito">Solito del canale</button></th>
+                  <th class="r"><button type="button" data-sort="xsolito">× il solito</button></th>
                 </tr>
               </thead>
               <tbody id="tbody"></tbody>
@@ -3510,11 +3515,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     let ricalcolato = false;   // true se i punteggi sono stati ricalcolati su un elenco filtrato
 
     // ---------- Filtri sopra l'elenco: titolo, canale, iscritti, data, visualizzazioni, al giorno, × iscritti ----------
-    const FE_FILTRI = ['tf-termine', 'tf-modo', 'tf-canale', 'tf-iscritti', 'tf-uscito', 'tf-views', 'tf-vpd', 'tf-rapporto'];
+    const FE_FILTRI = ['tf-termine', 'tf-modo', 'tf-canale', 'tf-iscritti', 'tf-uscito', 'tf-views', 'tf-vpd', 'tf-rapporto', 'tf-solito'];
     function filtroElencoAttivo() {
       const termine = $('tf-termine').value.trim(), canale = $('tf-canale').value.trim();
       return !!(termine || canale || $('tf-iscritti').value || $('tf-uscito').value !== '0' ||
-        $('tf-views').value !== '0' || $('tf-vpd').value !== '0' || $('tf-rapporto').value !== '0');
+        $('tf-views').value !== '0' || $('tf-vpd').value !== '0' || $('tf-rapporto').value !== '0' || $('tf-solito').value !== '0');
     }
     function applicaFiltroElenco(video) {
       const termine = normalizzaTesto($('tf-termine').value);
@@ -3523,6 +3528,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const [iMin, iMax] = $('tf-iscritti').value ? $('tf-iscritti').value.split('-').map(Number) : [null, null];
       const giorni = +$('tf-uscito').value || 0;
       const minViews = +$('tf-views').value || 0, minVpd = +$('tf-vpd').value || 0, minRapporto = +$('tf-rapporto').value || 0;
+      const minSolito = +$('tf-solito').value || 0, salvate = minSolito ? baseSalvata() : null;
       const ora = oraAnalisi;
       return video.filter((v) => {
         if (termine && normalizzaTesto(v.titolo).includes(termine) === escludi) return false;
@@ -3532,6 +3538,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         if (v.views < minViews) return false;
         if ((v.vpd || 0) < minVpd) return false;
         if (minRapporto && !(v.rapporto != null && v.rapporto >= minRapporto)) return false;
+        if (minSolito) { const sl = solitoDi(v, salvate); if (!(sl > 0 && v.views / sl >= minSolito)) return false; }
         return true;
       });
     }
@@ -3545,7 +3552,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     }
     function azzeraFiltroElenco() {
       $('tf-termine').value = ''; $('tf-modo').value = 'contiene'; $('tf-canale').value = '';
-      $('tf-iscritti').value = ''; $('tf-uscito').value = '0'; $('tf-views').value = '0'; $('tf-vpd').value = '0'; $('tf-rapporto').value = '0';
+      $('tf-iscritti').value = ''; $('tf-uscito').value = '0'; $('tf-views').value = '0'; $('tf-vpd').value = '0'; $('tf-rapporto').value = '0'; $('tf-solito').value = '0';
     }
     // Filtrare e ricalcolare NON salva una nuova riga nel database: resta salvata solo la ricerca originale
     // (con tutti gli Shorts), così non si riempie la cronologia di tante righe quasi uguali.
@@ -3572,11 +3579,65 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     $('tf-ricalcola').addEventListener('click', ricalcolaSuFiltro);
     $('tf-ripristina').addEventListener('click', ripristinaVideoOriginali);
 
+
+    // Riepilogo sopra l'elenco: appare quando il filtro "Volte il solito del canale" è attivo
+    const FASCE_X = [
+      { nome: 'Sotto il solito', ok: (x) => x < 1, col: 'var(--f4)' }, { nome: '×1 – ×2', ok: (x) => x >= 1 && x < 2, col: 'var(--f1)' },
+      { nome: '×2 – ×5', ok: (x) => x >= 2 && x < 5, col: 'var(--f2)' }, { nome: '×5 – ×10', ok: (x) => x >= 5 && x < 10, col: 'var(--series-3)' },
+      { nome: '×10 o più', ok: (x) => x >= 10, col: 'var(--series-3)' },
+    ];
+    function riepilogoOutlier() {
+      const box = $('riepilogo-outlier');
+      const soglia = +$('tf-solito').value || 0;
+      box.replaceChildren();
+      if (!soglia) { box.hidden = true; return; }
+      box.hidden = false;
+      const salvate = baseSalvata();
+      const dati = videoAttuali.map((v) => { const sl = solitoDi(v, salvate); return sl > 0 && v.views > 0 ? { v, sl, x: v.views / sl } : null; }).filter(Boolean);
+      if (dati.length < 5) {
+        const p = document.createElement('p'); p.className = 'muted'; p.style.cssText = 'font-size:.9rem;margin:6px 0 12px';
+        p.textContent = 'Per vedere quanti video sono outlier devo conoscere il "solito" dei canali (gli ultimi 50 Shorts di ciascuno). Costa crediti, quindi lo leggo solo se premi il pulsante nella sezione 6. ';
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-link'; b.textContent = 'Vai alla sezione 6';
+        b.addEventListener('click', () => { modoPG = 'solito'; disegnaPiccoliGrandi(); $('pg-toggle').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+        p.append(b); box.append(p);
+        return;
+      }
+      const out = dati.filter((d) => d.x >= soglia).sort((a, b) => b.x - a.x);
+      const kpi = (nome, valore, sotto) => {
+        const d = document.createElement('div'); d.className = 'kpi';
+        const top = document.createElement('div'); top.className = 'kpi-top';
+        const l = document.createElement('span'); l.className = 'label'; l.textContent = nome; top.append(l);
+        const v = document.createElement('div'); v.className = 'v num'; v.textContent = valore;
+        d.append(top, v, paragrafo(sotto));
+        return d;
+      };
+      const griglia = document.createElement('div'); griglia.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:6px 0 12px';
+      griglia.append(
+        kpi(soglia >= 5 ? 'Video outlier' : 'Video da ×' + soglia + ' in su', nf.format(out.length) + ' su ' + nf.format(dati.length),
+          Math.round(out.length / dati.length * 100) + '% degli Shorts con il solito noto (×' + soglia + ' o più il solito del canale)'),
+        kpi('Il più forte', out.length ? '×' + nf.format(Math.round(out[0].x)) : '—', out.length ? compatto(out[0].v.views) + ' contro ' + compatto(out[0].sl) + ' del suo canale' : 'nessun video'),
+        kpi('Video tipico tra questi', out.length ? '×' + nf.format(Math.round(mediana(out.map((d) => d.x)))) : '—', 'la mediana dei video che passano il filtro'));
+      box.append(griglia);
+      const barra = document.createElement('div'); barra.style.cssText = 'display:flex;height:22px;border-radius:8px;overflow:hidden';
+      const conti = FASCE_X.map((f) => dati.filter((d) => f.ok(d.x)).length);
+      FASCE_X.forEach((f, i) => { if (!conti[i]) return; const d = document.createElement('div'); d.style.cssText = 'width:' + conti[i] / dati.length * 100 + '%;background:' + f.col + (i === 4 ? ';opacity:.75' : ''); d.title = f.nome + ': ' + conti[i]; barra.append(d); });
+      const leg = document.createElement('div'); leg.className = 'legend'; leg.style.marginTop = '8px';
+      FASCE_X.forEach((f, i) => { const sp = document.createElement('span'), ic = document.createElement('i'); ic.style.background = f.col; if (i === 4) ic.style.opacity = '.75'; sp.append(ic, f.nome + ' · ' + nf.format(conti[i])); leg.append(sp); });
+      box.append(barra, leg);
+      const senza = videoAttuali.length - dati.length;
+      if (senza > 0) box.append(paragrafo(nf.format(senza) + (senza === 1 ? ' Short non conta' : ' Shorts non contano') + ': il suo canale non ha abbastanza Shorts per calcolare il "solito".', 'muted'));
+    }
+
     function tabella() {
       const tb = $('tbody');
       tb.replaceChildren();
       const filtrati = applicaFiltroElenco(videoAttuali);
-      const lista = [...filtrati].sort((a, b) => (b[ordine] == null ? -1 : b[ordine]) - (a[ordine] == null ? -1 : a[ordine]));
+      const salvate = baseSalvata();
+      const valore = (v) => {
+        if (ordine === 'solito' || ordine === 'xsolito') { const sl = solitoDi(v, salvate); return sl > 0 ? (ordine === 'solito' ? sl : v.views / sl) : null; }
+        return v[ordine];
+      };
+      const lista = [...filtrati].sort((a, b) => (valore(b) == null ? -1 : valore(b)) - (valore(a) == null ? -1 : valore(a)));
       lista.forEach((v) => {
         const tr = document.createElement('tr');
         const td0 = document.createElement('td');
@@ -3596,6 +3657,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           [compatto(v.views), 'r num'],
           [compatto(v.vpd), 'r num'],
           [v.rapporto == null ? '—' : '×' + nf1.format(v.rapporto), 'r num'],
+          [solitoDi(v, salvate) > 0 ? compatto(solitoDi(v, salvate)) : '—', 'r num'],
+          [solitoDi(v, salvate) > 0 ? '×' + nf1.format(v.views / solitoDi(v, salvate)) : '—', 'r num'],
         ];
         tr.append(td0);
         celle.forEach(([t, c]) => { const td = document.createElement('td'); td.className = c; td.textContent = t; tr.append(td); });
@@ -3605,6 +3668,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         if (b.dataset.sort === ordine) b.setAttribute('aria-sort', 'descending'); else b.removeAttribute('aria-sort');
       });
       aggiornaFiltroElenco(filtrati.length);
+      riepilogoOutlier();
     }
 
     // ---------- Archivio e download ----------
@@ -3683,7 +3747,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const ora = new Date();
       const copia = $('results').firstElementChild.cloneNode(true);
       copia.querySelector('#save-bar').remove();
-      copia.querySelectorAll('.actions, .table-head + p, #filtro-intro, #filtro-elenco, #tf-conta, .banner-azioni, #profondo-risultato, tr.filtri-colonne').forEach((n) => n.remove());
+      copia.querySelectorAll('.actions, .table-head + p, #filtro-intro, #filtro-elenco, #tf-conta, .banner-azioni, #profondo-risultato, #riepilogo-outlier, tr.filtri-colonne').forEach((n) => n.remove());
       const vBox = copia.querySelector('#varianti-risultato');
       if (vBox && vBox.children.length) { const vBtn = copia.querySelector('#varianti-btn'); if (vBtn) vBtn.remove(); }
       else { const vCard = copia.querySelector('#varianti-card'); if (vCard) vCard.remove(); }

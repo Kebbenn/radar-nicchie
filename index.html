@@ -3622,12 +3622,18 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         kpi('Il più forte', out.length ? '×' + nf.format(Math.round(out[0].x)) : '—', out.length ? compatto(out[0].v.views) + ' contro ' + compatto(out[0].sl) + ' del suo canale' : 'nessun video'),
         kpi('Video tipico tra questi', out.length ? '×' + nf.format(Math.round(mediana(out.map((d) => d.x)))) : '—', 'la mediana dei video che passano il filtro'));
       box.append(griglia);
-      const barra = document.createElement('div'); barra.style.cssText = 'display:flex;height:22px;border-radius:8px;overflow:hidden';
-      const conti = FASCE_X.map((f) => dati.filter((d) => f.ok(d.x)).length);
-      FASCE_X.forEach((f, i) => { if (!conti[i]) return; const d = document.createElement('div'); d.style.cssText = 'width:' + conti[i] / dati.length * 100 + '%;background:' + f.col + (i === 4 ? ';opacity:.75' : ''); d.title = f.nome + ': ' + conti[i]; barra.append(d); });
-      const leg = document.createElement('div'); leg.className = 'legend'; leg.style.marginTop = '8px';
-      FASCE_X.forEach((f, i) => { const sp = document.createElement('span'), ic = document.createElement('i'); ic.style.background = f.col; if (i === 4) ic.style.opacity = '.75'; sp.append(ic, f.nome + ' · ' + nf.format(conti[i])); leg.append(sp); });
-      box.append(barra, leg);
+      const tit = document.createElement('div'); tit.className = 'label'; tit.style.margin = '4px 0 8px';
+      tit.textContent = 'Grandezza dei canali dei ' + nf.format(out.length) + (out.length === 1 ? ' video outlier' : ' video outlier');
+      box.append(tit);
+      if (!out.length) box.append(paragrafo('Nessun video arriva a ×' + soglia + ' il solito del suo canale.', 'muted'));
+      else {
+        const barra = document.createElement('div'); barra.style.cssText = 'display:flex;height:22px;border-radius:8px;overflow:hidden';
+        const conti = FASCE_CANALE.map((f, i) => out.filter((d) => fasciaDi(d.v.iscritti) === i).length);
+        FASCE_CANALE.forEach((f, i) => { if (!conti[i]) return; const d = document.createElement('div'); d.style.cssText = 'width:' + conti[i] / out.length * 100 + '%;background:' + f.v; d.title = f.nome + ': ' + conti[i] + ' (' + Math.round(conti[i] / out.length * 100) + '%)'; barra.append(d); });
+        const leg = document.createElement('div'); leg.className = 'legend'; leg.style.marginTop = '8px';
+        FASCE_CANALE.forEach((f, i) => { if (!conti[i]) return; const sp = document.createElement('span'), ic = document.createElement('i'); ic.style.background = f.v; sp.append(ic, f.nome + ' · ' + nf.format(conti[i]) + ' (' + Math.round(conti[i] / out.length * 100) + '%)'); leg.append(sp); });
+        box.append(barra, leg);
+      }
       const senza = videoAttuali.length - dati.length;
       if (senza > 0) box.append(paragrafo(nf.format(senza) + (senza === 1 ? ' Short non conta' : ' Shorts non contano') + ': il suo canale non ha abbastanza Shorts per calcolare il "solito".', 'muted'));
     }

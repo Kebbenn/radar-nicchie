@@ -1181,7 +1181,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <label class="field"><span class="label">Volte gli iscritti, minimo</span>
             <select id="tf-rapporto" aria-label="Volte gli iscritti, minimo"><option value="0">Tutti</option><option value="1">×1 o più</option><option value="3">×3 o più</option><option value="10">×10 o più</option></select></label>
           <label class="field"><span class="label">Volte il solito del canale, minimo</span>
-            <select id="tf-solito" aria-label="Volte il solito del canale, minimo"><option value="0">Tutti</option><option value="2">×2 o più</option><option value="5">×5 o più (outlier)</option><option value="10">×10 o più</option></select></label>
+            <select id="tf-solito" aria-label="Volte il solito del canale, minimo"><option value="0">Tutti</option><option value="2">×2 o più</option><option value="5">×5 o più (outlier, almeno 40k views)</option><option value="10">×10 o più</option></select></label>
           <button id="tf-ricalcola" class="shimmer" type="button" disabled>Ricalcola solo su questi</button>
           <button id="tf-reset" class="btn-link" type="button">Togli i filtri</button>
           <button id="tf-ripristina" class="btn-link" type="button" hidden>↺ Mostra di nuovo tutti gli Shorts</button>
@@ -2143,6 +2143,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     // ---------- 6 · Piccoli contro grandi: due modi (iscritti oppure solito del canale) ----------
     const K_BASE = 'radar-base-canali';          // memoria del "solito" di ogni canale (mediana dei suoi ultimi 50 Shorts)
     const BASE_VALIDA_MS = 30 * GIORNO;           // come nel database: dopo 30 giorni il dato non vale più (regole YouTube)
+    const OUTLIER_MIN_VIEWS = 40000;              // ...e deve avere almeno 40k visualizzazioni (sotto, anche ×50 è solo rumore di un canale minuscolo)
+    const èOutlier = (x, views, soglia) => x >= soglia && (soglia < OUTLIER_X || views >= OUTLIER_MIN_VIEWS);
     const OUTLIER_X = 5;                          // un video è outlier se fa almeno 5 volte il solito del suo canale
     let modoPG = 'iscritti';
     let lavoroPG = false;
@@ -2278,7 +2280,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       }
       $('pg-titolo').textContent = 'Chi fa più del solito del proprio canale';
       $('pg-testo').textContent = 'Ogni pallino è un video: a destra quanto fa di solito il suo canale (mediana dei suoi ultimi 50 Shorts), in alto quante visualizzazioni ha fatto lui. Sopra la linea ×' + OUTLIER_X + ' è un outlier.';
-      $('pg-legenda').innerHTML = '<span><i class="round"></i>Outlier (×' + OUTLIER_X + ' o più)</span><span><i class="round old"></i>Nella norma</span>';
+      $('pg-legenda').innerHTML = '<span><i class="round"></i>Outlier (×' + OUTLIER_X + ' o più, almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' views)</span><span><i class="round old"></i>Nella norma</span>';
       const da = canaliDaLeggere();
       if (da.length && !lavoroPG) {
         const rimasti = CREDITI_GIORNO - creditiUsati();
@@ -2297,10 +2299,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         box.append(paragrafo(canaliDaLeggere().length ? 'Premi "Leggi gli ultimi 50 Shorts dei canali" per vedere il confronto.' : 'Troppo pochi video con il "solito" del canale per questo grafico.', 'empty-chart'));
         return;
       }
-      const out = dati.filter((v) => v.mult >= OUTLIER_X).sort((a, b) => b.mult - a.mult);
+      const out = dati.filter((v) => èOutlier(v.mult, v.views, OUTLIER_X)).sort((a, b) => b.mult - a.mult);
       const riga = document.createElement('p'); riga.className = 'big-line';
       const b = document.createElement('b'); b.textContent = out.length + ' su ' + dati.length;
-      riga.append(b, ' video sono outlier (×' + OUTLIER_X + ' o più il solito del loro canale, il ' + Math.round(out.length / dati.length * 100) + '%).' +
+      riga.append(b, ' video sono outlier (×' + OUTLIER_X + ' o più il solito del loro canale e almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' views, il ' + Math.round(out.length / dati.length * 100) + '%).' +
         (out.length ? ' Il più forte fa ×' + nf.format(Math.round(out[0].mult)) + ' (' + compatto(out[0].views) + ' contro ' + compatto(out[0].solito) + '); l\'outlier tipico fa ×' + nf.format(Math.round(mediana(out.map((v) => v.mult)))) + '.' : ''));
       box.append(riga);
       const senza = new Set(video.map((v) => v.canaleId)).size - new Set(dati.map((v) => v.canaleId)).size;
@@ -2331,7 +2333,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const lx = el('line', { x1: x(xMin), y1: y(xMin * OUTLIER_X), x2: x(xFine), y2: y(xFine * OUTLIER_X), stroke: 'var(--series-3)', 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }, svg);
       testo(svg, x(xFine) - 6, Math.max(m.t + 12, y(xFine * OUTLIER_X) - 6), '×' + OUTLIER_X + ' · outlier', { 'text-anchor': 'end', style: 'fill:var(--series-3);font-weight:600' });
       [...dati].sort((p, q) => p.mult - q.mult).forEach((v) => {
-        const cx = x(v.solito), cy = y(v.views), o = v.mult >= OUTLIER_X;
+        const cx = x(v.solito), cy = y(v.views), o = èOutlier(v.mult, v.views, OUTLIER_X);
         const link = el('a', { href: 'https://www.youtube.com/shorts/' + encodeURIComponent(v.id), target: '_blank', rel: 'noopener' }, svg);
         const hit = el('circle', { cx, cy, r: 11, class: 'hit', tabindex: 0 }, link);
         el('circle', { cx, cy, r: o ? 5.5 : 4, class: 'dot' + (o ? '' : ' old'), stroke: 'var(--surface)', 'stroke-width': 1.5 }, link);
@@ -2343,7 +2345,24 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         hit.addEventListener('blur', nascondiTip);
       });
     }
-    document.querySelectorAll('#pg-toggle [data-pg]').forEach((b) => b.addEventListener('click', () => { modoPG = b.dataset.pg; disegnaPiccoliGrandi(); }));
+    // Passare a "solito del canale": prendo subito dal database i canali già letti (gratis) e filtro l'elenco in fondo sugli outlier, senza ricaricare la pagina
+    let filtroAuto = false;
+    async function impostaModoPG(modo) {
+      modoPG = modo;
+      const noti = () => { const sv = baseSalvata(); return videoAttuali.filter((v) => solitoDi(v, sv) > 0).length; };
+      const filtraOutlier = () => { if (noti() >= 5 && $('tf-solito').value === '0') { $('tf-solito').value = String(OUTLIER_X); filtroAuto = true; } };
+      if (modo === 'solito') {
+        filtraOutlier();
+        disegnaPiccoliGrandi(); tabella();
+        const n = await sincronizzaCondivisi();
+        if (n && modoPG === 'solito') { filtraOutlier(); disegnaPiccoliGrandi(); tabella(); }
+      } else {
+        if (filtroAuto && $('tf-solito').value === String(OUTLIER_X)) $('tf-solito').value = '0';
+        filtroAuto = false;
+        disegnaPiccoliGrandi(); tabella();
+      }
+    }
+    document.querySelectorAll('#pg-toggle [data-pg]').forEach((b) => b.addEventListener('click', () => impostaModoPG(b.dataset.pg)));
     $('pg-avvia').addEventListener('click', avviaLetturaBase);
 
     // 9. Si sta saturando? Confronto gli ultimi 3 mesi con i 3 mesi prima (senza gli Shorts degli ultimi 7 giorni)
@@ -3581,7 +3600,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         if (v.views < minViews) return false;
         if ((v.vpd || 0) < minVpd) return false;
         if (minRapporto && !(v.rapporto != null && v.rapporto >= minRapporto)) return false;
-        if (minSolito) { const sl = solitoDi(v, salvate); if (!(sl > 0 && v.views / sl >= minSolito)) return false; }
+        if (minSolito) { const sl = solitoDi(v, salvate); if (!(sl > 0 && èOutlier(v.views / sl, v.views, minSolito))) return false; }
         return true;
       });
     }
@@ -3645,11 +3664,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const p = document.createElement('p'); p.className = 'muted'; p.style.cssText = 'font-size:.9rem;margin:6px 0 12px';
         p.textContent = 'Per vedere quanti video sono outlier devo conoscere il "solito" dei canali (gli ultimi 50 Shorts di ciascuno). Costa crediti, quindi lo leggo solo se premi il pulsante nella sezione 6. ';
         const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-link'; b.textContent = 'Vai alla sezione 6';
-        b.addEventListener('click', () => { modoPG = 'solito'; disegnaPiccoliGrandi(); $('pg-toggle').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+        b.addEventListener('click', () => { impostaModoPG('solito'); $('pg-toggle').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
         p.append(b); box.append(p);
         return;
       }
-      const out = dati.filter((d) => d.x >= soglia).sort((a, b) => b.x - a.x);
+      const out = dati.filter((d) => èOutlier(d.x, d.v.views, soglia)).sort((a, b) => b.x - a.x);
       const kpi = (nome, valore, sotto) => {
         const d = document.createElement('div'); d.className = 'kpi';
         const top = document.createElement('div'); top.className = 'kpi-top';
@@ -3661,14 +3680,14 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const griglia = document.createElement('div'); griglia.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:6px 0 12px';
       griglia.append(
         kpi(soglia >= 5 ? 'Video outlier' : 'Video da ×' + soglia + ' in su', nf.format(out.length) + ' su ' + nf.format(dati.length),
-          Math.round(out.length / dati.length * 100) + '% degli Shorts con il solito noto (×' + soglia + ' o più il solito del canale)'),
+          Math.round(out.length / dati.length * 100) + '% degli Shorts con il solito noto (×' + soglia + ' o più il solito del canale' + (soglia >= OUTLIER_X ? ', almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' views' : '') + ')'),
         kpi('Il più forte', out.length ? '×' + nf.format(Math.round(out[0].x)) : '—', out.length ? compatto(out[0].v.views) + ' contro ' + compatto(out[0].sl) + ' del suo canale' : 'nessun video'),
         kpi('Video tipico tra questi', out.length ? '×' + nf.format(Math.round(mediana(out.map((d) => d.x)))) : '—', 'la mediana dei video che passano il filtro'));
       box.append(griglia);
       const tit = document.createElement('div'); tit.className = 'label'; tit.style.margin = '4px 0 8px';
       tit.textContent = 'Grandezza dei canali dei ' + nf.format(out.length) + (out.length === 1 ? ' video outlier' : ' video outlier');
       box.append(tit);
-      if (!out.length) box.append(paragrafo('Nessun video arriva a ×' + soglia + ' il solito del suo canale.', 'muted'));
+      if (!out.length) box.append(paragrafo('Nessun video arriva a ×' + soglia + ' il solito del suo canale' + (soglia >= OUTLIER_X ? ' con almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' views' : '') + '.', 'muted'));
       else {
         const barra = document.createElement('div'); barra.style.cssText = 'display:flex;height:22px;border-radius:8px;overflow:hidden';
         const conti = FASCE_CANALE.map((f, i) => out.filter((d) => fasciaDi(d.v.iscritti) === i).length);

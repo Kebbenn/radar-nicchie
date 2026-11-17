@@ -1386,6 +1386,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <div class="seg" id="elenco-schede" style="margin:6px 0 12px">
             <button type="button" data-scheda="tutti" aria-pressed="true">Tutti gli Shorts</button>
             <button type="button" data-scheda="outlier" aria-pressed="false">Outlier dei canali <span id="oc-conta"></span></button>
+            <button type="button" data-scheda="archivio" aria-pressed="false">Outlier di tutte le ricerche <span id="oa-conta"></span></button>
           </div>
           <div id="scheda-tutti">
           <div id="riepilogo-outlier" hidden></div>
@@ -3732,6 +3733,35 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
     // ---------- Elenco completo · scheda "Outlier dei canali": i video outlier tra gli ultimi 50 Shorts di ogni canale della ricerca ----------
     let schedaElenco = 'tutti', ocMax = ELENCO_PASSO, lavoroOC = false, ocMsg = '';
+    // scheda "Outlier di tutte le ricerche": i canali già letti, di qualunque ricerca, presi dal database condiviso (e dal browser)
+    const ARCH = { stato: 'idle', righe: [], canali: 0, t: 0 };
+    async function caricaArchivioOutlier() {
+      ARCH.stato = 'carico'; if (schedaElenco === 'archivio') disegnaOutlierCanali();
+      const mappa = new Map();
+      let errore = false;
+      try {
+        if (dbConf) for (let off = 0; off < 20000; off += 1000) {
+          const r = await chiamaDb('/rest/v1/canali_solito?select=canale_id,solito,letto_il,outlier&outlier=not.is.null&order=canale_id&limit=1000&offset=' + off, { method: 'GET' }, false);
+          const righe = Array.isArray(r) ? r : [];
+          righe.forEach((x) => { if (x.solito > 0 && Array.isArray(x.outlier) && x.outlier.length) mappa.set(x.canale_id, { sl: +x.solito, o: x.outlier, lt: Date.parse(x.letto_il) }); });
+          if (righe.length < 1000) break;
+        }
+      } catch (e) { errore = true; }
+      Object.entries(baseSalvata()).forEach(([id, e]) => { if (e && e.m > 0 && Array.isArray(e.o) && e.o.length && !mappa.has(id)) mappa.set(id, { sl: e.m, o: e.o, lt: e.t }); });
+      const nomi = new Map();
+      videoAttuali.forEach((v) => { if (v.canaleId && !nomi.has(v.canaleId)) nomi.set(v.canaleId, v); });
+      const righe = [];
+      mappa.forEach((x, id) => x.o.forEach((o) => {
+        const xx = o.v / x.sl;
+        if (!èOutlier(xx, o.v, OUTLIER_X)) return;
+        const v = nomi.get(id);
+        righe.push({ o, canale: o.c || (v && v.canale) || 'Canale', canaleId: id, sl: x.sl, x: xx, isc: o.s !== undefined ? o.s : (v ? v.iscritti : null) });
+      }));
+      righe.sort((a, b) => b.x - a.x);
+      ARCH.righe = righe; ARCH.canali = mappa.size; ARCH.t = Date.now(); ARCH.stato = errore ? 'errore' : 'ok';
+      $('oa-conta').textContent = righe.length ? '(' + nf.format(righe.length) + ')' : '';
+      if (schedaElenco === 'archivio') disegnaOutlierCanali();
+    }
     function datiOutlierCanali() {
       const salvate = baseSalvata();
       const nomi = new Map(), iscritti = new Map();
@@ -3769,14 +3799,21 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       if (schedaElenco === 'outlier') disegnaOutlierCanali(d);
     }
     function disegnaOutlierCanali(d) {
-      d = d || datiOutlierCanali();
+      const arch = schedaElenco === 'archivio';
+      d = d || (arch ? { righe: ARCH.righe, daRileggere: [], senzaSolito: 0, canali: ARCH.canali } : datiOutlierCanali());
       const totale = d.righe.length;
       const attivo = filtroOutlierAttivo();
       if (attivo) d = Object.assign({}, d, { righe: filtraOutlierCanali(d.righe) });
       const box = $('oc-contenuto');
       box.replaceChildren();
       const p = (testo, cls) => { const e = document.createElement('p'); e.className = cls || 'muted'; e.style.cssText = 'font-size:.9rem;margin:6px 0 12px'; e.textContent = testo; return e; };
-      box.append(p(attivo && totale
+      if (arch && ARCH.stato === 'carico') { box.append(p('Carico i video dal database…', 'big-line')); return; }
+      if (arch && ARCH.stato === 'errore') box.append(p('Non sono riuscito a leggere il database: vedi solo i canali letti su questo dispositivo.'));
+      if (arch) box.append(p(attivo && totale
+        ? nf.format(d.righe.length) + ' su ' + nf.format(totale) + ' video outlier rispettano i filtri.'
+        : totale ? nf.format(totale) + (totale === 1 ? ' video outlier' : ' video outlier') + ' da ' + nf.format(ARCH.canali) + (ARCH.canali === 1 ? ' canale' : ' canali') + ', letti in tutte le tue ricerche (×' + OUTLIER_X + ' o più il solito del canale, almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' views). I canali letti prima di oggi hanno il nome “Canale” finché non li rileggi.'
+        : 'Ancora nessun video outlier salvato. Compaiono quando leggi gli ultimi 50 Shorts dei canali, con l\'accesso fatto.', 'big-line'));
+      else box.append(p(attivo && totale
         ? nf.format(d.righe.length) + ' su ' + nf.format(totale) + ' video outlier rispettano i filtri.'
         : d.righe.length
         ? nf.format(d.righe.length) + (d.righe.length === 1 ? ' video è un outlier' : ' video sono outlier') + ' negli ultimi 50 Shorts dei canali di questa ricerca (×' + OUTLIER_X + ' o più il solito del canale, almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' views). Qui ci sono anche video che non parlano di questo argomento: sono i colpi che quei canali hanno fatto altrove.'
@@ -3813,7 +3850,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const img = document.createElement('img'); img.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(r.o.i) + '/mqdefault.jpg'; img.alt = ''; img.loading = 'lazy';
         const info = document.createElement('div'); info.style.minWidth = '0';
         const a = document.createElement('a'); a.href = linkVideo(r.o.i); a.target = '_blank'; a.rel = 'noopener'; a.textContent = r.o.t || r.o.i;
-        const sm = document.createElement('small'); sm.textContent = r.canale;
+        const sm = document.createElement('small'); const ac = document.createElement('a'); ac.href = 'https://www.youtube.com/channel/' + encodeURIComponent(r.canaleId); ac.target = '_blank'; ac.rel = 'noopener'; ac.textContent = r.canale; sm.append(ac);
         info.append(a, sm); vid.append(img, info); td0.append(vid); tr.append(td0);
         [[r.isc == null ? 'nascosti' : compatto(r.isc), 'r num'], [dataBreve(new Date(r.o.d)), ''], [compatto(r.o.v), 'r num'], [compatto(r.sl), 'r num'], ['×' + nf1.format(r.x), 'r num']].forEach(([t, c]) => { const td = document.createElement('td'); td.className = c; td.textContent = t; tr.append(td); });
         tb.append(tr);
@@ -3850,7 +3887,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       await Promise.all([lavoratore(), lavoratore(), lavoratore(), lavoratore()]);
       scrivi(K_BASE, salvate);
       await condividiLetti(letti);
-      lavoroOC = false;
+      lavoroOC = false; ARCH.stato = 'idle';
       ocMsg = errore ? 'Mi sono fermato: ' + errore : '';
       tabella();
       if (tagliati && schedaElenco === 'outlier') $('oc-contenuto').prepend(Object.assign(document.createElement('p'), { className: 'muted', style: 'font-size:.9rem', textContent: 'Per ' + tagliati + ' canali non ho abbastanza crediti oggi: li leggo domani.' }));
@@ -3864,8 +3901,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       schedaElenco = b.dataset.scheda;
       document.querySelectorAll('#elenco-schede [data-scheda]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.scheda === schedaElenco)));
       $('scheda-tutti').hidden = schedaElenco !== 'tutti';
-      $('scheda-outlier').hidden = schedaElenco !== 'outlier';
+      $('scheda-outlier').hidden = schedaElenco === 'tutti';
       if (schedaElenco === 'outlier') { ocMax = ELENCO_PASSO; disegnaOutlierCanali(); sincronizzaCondivisi().then((n) => { if (n) tabella(); }); }
+      if (schedaElenco === 'archivio') { ocMax = ELENCO_PASSO; if (ARCH.stato === 'idle' || ARCH.stato === 'errore' || Date.now() - ARCH.t > 120000) caricaArchivioOutlier(); else disegnaOutlierCanali(); }
     }));
 
     // ---------- Archivio e download ----------

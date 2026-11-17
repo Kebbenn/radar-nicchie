@@ -1334,33 +1334,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             <div class="chart" id="chart-scatter-canali"></div>
           </section>
 
-          <section class="card compact-card">
-            <div class="card-head">
-              <span class="label">7 · Piccoli canali</span>
-              <h2>Video con molte più visualizzazioni che iscritti</h2>
-              <p>"×10" vuol dire che il video ha 10 volte le visualizzazioni rispetto agli iscritti del canale.</p>
-            </div>
-            <ol class="rank compact" id="rank"></ol>
-          </section>
+          
 
-          <section class="card compact-card">
-            <div class="card-head">
-              <span class="label">8 · Canali nuovi</span>
-              <h2>Canali aperti negli ultimi 3 mesi</h2>
-              <p>Se ci sono canali nuovi che vanno bene, puoi partire da zero anche tu.</p>
-            </div>
-            <div id="newch" style="display:grid; gap:12px"></div>
-          </section>
+          
 
-          <section class="card">
-            <div class="card-head">
-              <span class="label">9 · Canali nuovi nel tempo</span>
-              <h2>Quanti canali nuovi ci provano ogni settimana</h2>
-              <p>Quanti canali aperti da poco hanno pubblicato il loro primo Short su questo argomento. Se cresce, l'argomento sta attirando sempre più gente nuova.</p>
-            </div>
-            <div class="chart" id="chart-weeks-new"></div>
-            <p class="big-line" id="weeks-new-text"></p>
-          </section>
+          
         </div>
 
         <div class="sec-title">
@@ -1371,7 +1349,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         <div class="charts">
           <section class="card wide">
             <div class="card-head">
-              <span class="label">10 · Funziona sempre o è fortuna?</span>
+              <span class="label">7 · Funziona sempre o è fortuna?</span>
               <h2>Gli Shorts dei canali che ci hanno provato più volte</h2>
               <p>Ogni riga è un canale con almeno 3 Shorts su questo argomento, ogni pallino è uno Short. Se i pallini pieni (sopra la media) sono tanti, il successo si ripete.</p>
             </div>
@@ -1380,58 +1358,16 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             <button class="btn-light" id="costanza-more" type="button" hidden>Mostra altri</button>
           </section>
 
-          <section class="card">
-            <div class="card-head">
-              <span class="label">11 · Percentuale di "colpi"</span>
-              <h2>Quante probabilità ci sono di fare il botto</h2>
-              <p>Su tutti gli Shorts più pertinenti, quanti superano queste soglie di visualizzazioni.</p>
-            </div>
-            <div id="hits" style="display:grid; gap:12px"></div>
-          </section>
+          
 
-          <section class="card">
-            <div class="card-head">
-              <span class="label">12 · Durata migliore</span>
-              <h2>Quanto deve durare il tuo Short</h2>
-              <p>Visualizzazioni tipiche per ogni durata. La colonna piena è la durata che funziona meglio.</p>
-            </div>
-            <div class="chart" id="chart-duration"></div>
-            <p class="big-line" id="duration-text"></p>
-          </section>
+          
 
-          <section class="card">
-            <div class="card-head">
-              <span class="label">13 · Formato del titolo</span>
-              <h2>Le parole dei titoli che funzionano</h2>
-            </div>
-            <div id="formats" style="display:grid; gap:10px"></div>
-          </section>
+          
 
-          <section class="card">
-            <div class="card-head">
-              <span class="label">14 · Coinvolgimento</span>
-              <h2>Quanto il pubblico partecipa</h2>
-              <p>Like e commenti ogni 1.000 visualizzazioni: più sono alti, più il pubblico è appassionato.</p>
-            </div>
-            <div id="engagement" style="display:grid; gap:12px"></div>
-          </section>
+          
         </div>
 
-        <section class="card" id="varianti-card">
-          <div class="card-head">
-            <span class="label">Altri argomenti da provare</span>
-            <h2>Cos'altro classificano questi canali</h2>
-            <p>Guardo gli altri Shorts di classifica degli stessi canali trovati in questa ricerca, per scoprire argomenti simili che già funzionano per loro. Conto solo un argomento se lo stesso canale lo ha fatto almeno 2 volte.
-              Costa in più circa 1 credito per ogni canale controllato, e lo faccio solo quando premi il pulsante.</p>
-          </div>
-          <div class="depth" role="radiogroup" aria-label="Quanti canali controllare">
-            <label><input type="radio" name="varianti-livello" value="10"><span><b>Veloce</b> fino a 10 canali · circa 10 crediti</span></label>
-            <label><input type="radio" name="varianti-livello" value="20"><span><b>Normale</b> fino a 20 canali · circa 20 crediti</span></label>
-            <label><input type="radio" name="varianti-livello" value="40"><span><b>Profonda</b> fino a 40 canali · circa 40 crediti</span></label>
-          </div>
-          <div><button id="varianti-btn" class="shimmer" type="button">Trova varianti</button></div>
-          <div id="varianti-risultato"></div>
-        </section>
+        
 
         <section class="card">
           <div class="table-head">
@@ -2676,7 +2612,6 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       scorri.append(tabella);
       box.append(scorri);
     }
-    $('varianti-btn').addEventListener('click', trovaVarianti);
 
     // ---------- Cerca più a fondo: trova dentro ogni canale gli Shorts che la ricerca normale potrebbe aver lasciato fuori ----------
     let profondoLivello = '20';   // scelto in automatico in base al livello della ricerca mostrata (vedi sotto)
@@ -3940,9 +3875,6 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       mostraTrend(videoAttuali);
       disegnaPiccoliGrandi();
       graficoCostanza($('consistency'), videoAttuali);
-      graficoDurata($('chart-duration'), $('duration-text'), videoAttuali);
-      graficoSettimane($('chart-weeks-new'), settimaneNuoviAttuali, 'Canali nuovi per settimana');
-      $('weeks-new-text').textContent = testoCanaliNuoviTempo(settimaneNuoviAttuali);
     }
     function mostraRisultati() {
       settimaneAttuali = settimane(videoAttuali);
@@ -3970,14 +3902,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         c.textContent = p.nome + ' ' + (p.v == null ? '—' : p.v);
         parti.append(c);
       });
-      mostraColpi($('hits'), videoAttuali);
-      mostraFormati($('formats'), videoAttuali);
-      mostraCoinvolgimento($('engagement'), videoAttuali);
       potenziale($('potential'), videoAttuali);
       quote($('share'), videoAttuali);
-      nuoviCanali($('newch'), videoAttuali);
       disegnaGrafici();
-      classifica($('rank'), videoAttuali);
       $('table-title').textContent = videoAttuali.length + ' Shorts trovati per "' + ricercaAttuale + '"';
       $('save-title').textContent = 'Risultati per "' + ricercaAttuale + '"';
       $('r-termine').textContent = ricercaAttuale;
@@ -3999,8 +3926,6 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       mostraNumeriRicerca();
       tabella();
       costanzaMostrati = 10;
-      $('varianti-risultato').replaceChildren();
-      $('varianti-btn').disabled = false;
       $('profondo-risultato').replaceChildren();
       $('profondo-btn').disabled = false;
       faiComparire(document.querySelectorAll('#results .verdict, #results .thermo, #results #trend, #results .charts > .card, #results > div > .card:last-child'));

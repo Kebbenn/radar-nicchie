@@ -1400,6 +1400,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
               <tbody id="tbody"></tbody>
             </table>
           </div>
+          <div id="elenco-altri" class="more" style="text-align:center;margin-top:14px"></div>
         </section>
       </div>
     </div>
@@ -3635,6 +3636,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       if (senza > 0) box.append(paragrafo(nf.format(senza) + (senza === 1 ? ' Short non conta' : ' Shorts non contano') + ': il suo canale non ha abbastanza Shorts per calcolare il "solito".', 'muted'));
     }
 
+    const ELENCO_PASSO = 20;       // quanti Shorts mostro alla volta nell'elenco completo
+    let elencoMax = ELENCO_PASSO, elencoFirma = '';
     function tabella() {
       const tb = $('tbody');
       tb.replaceChildren();
@@ -3645,7 +3648,21 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         return v[ordine];
       };
       const lista = [...filtrati].sort((a, b) => (valore(b) == null ? -1 : valore(b)) - (valore(a) == null ? -1 : valore(a)));
-      lista.forEach((v) => {
+      // se cambiano filtri, ordine o ricerca riparto dai primi 20; altrimenti tengo quelli già aperti
+      const firma = JSON.stringify([FE_FILTRI.map((id) => $(id).value), ordine, videoAttuali.length, ricercaAttuale, oraAnalisi]);
+      if (firma !== elencoFirma) { elencoFirma = firma; elencoMax = ELENCO_PASSO; }
+      const altri = $('elenco-altri');
+      altri.replaceChildren();
+      if (lista.length > elencoMax) {
+        const resto = lista.length - elencoMax;
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-light'; b.id = 'elenco-altri-btn';
+        b.textContent = 'Mostra altri ' + nf.format(Math.min(ELENCO_PASSO, resto));
+        b.addEventListener('click', () => { elencoMax += ELENCO_PASSO; tabella(); });
+        const info = document.createElement('p'); info.className = 'muted'; info.style.cssText = 'font-size:.85rem;margin:8px 0 0';
+        info.textContent = 'Ne vedi ' + nf.format(elencoMax) + ' su ' + nf.format(lista.length);
+        altri.append(b, info);
+      }
+      lista.slice(0, elencoMax).forEach((v) => {
         const tr = document.createElement('tr');
         const td0 = document.createElement('td');
         const box = document.createElement('div'); box.className = 'vid';
@@ -3752,8 +3769,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     // ---------- Salva la ricerca come pagina HTML ----------
     function salvaHtml() {
       const ora = new Date();
+      const maxPrima = elencoMax; elencoMax = Infinity; tabella();      // nel file salvato voglio tutto l'elenco, non solo i primi 20
       const copia = $('results').firstElementChild.cloneNode(true);
+      elencoMax = maxPrima; tabella();
       copia.querySelector('#save-bar').remove();
+      copia.querySelectorAll('#elenco-altri').forEach((n) => n.remove());
       copia.querySelectorAll('.actions, .table-head + p, #filtro-intro, #filtro-elenco, #tf-conta, .banner-azioni, #profondo-risultato, #riepilogo-outlier, tr.filtri-colonne').forEach((n) => n.remove());
       const vBox = copia.querySelector('#varianti-risultato');
       if (vBox && vBox.children.length) { const vBtn = copia.querySelector('#varianti-btn'); if (vBtn) vBtn.remove(); }

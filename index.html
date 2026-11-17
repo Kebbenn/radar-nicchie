@@ -1408,7 +1408,19 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           </div>
           <div id="elenco-altri" class="more" style="text-align:center;margin-top:14px"></div>
           </div>
-          <div id="scheda-outlier" hidden></div>
+          <div id="scheda-outlier" hidden>
+            <div class="filtro-elenco" id="oc-filtri">
+              <label class="field grow"><span class="label">Titolo o canale</span>
+                <input id="of-testo" type="search" placeholder="Es. pizza, nome del canale…" autocomplete="off"></label>
+              <label class="field"><span class="label">Iscritti del canale</span><select id="of-iscritti" aria-label="Iscritti del canale"></select></label>
+              <label class="field"><span class="label">Uscito da quando</span><select id="of-uscito" aria-label="Uscito da quando"></select></label>
+              <label class="field"><span class="label">Visualizzazioni minime</span><select id="of-views" aria-label="Visualizzazioni minime"></select></label>
+              <label class="field"><span class="label">Volte il solito, minimo</span>
+                <select id="of-solito" aria-label="Volte il solito del canale, minimo"><option value="0">Tutti</option><option value="10">×10 o più</option><option value="20">×20 o più</option></select></label>
+              <button id="of-reset" class="btn-link" type="button">Togli i filtri</button>
+            </div>
+            <div id="oc-contenuto"></div>
+          </div>
         </section>
       </div>
     </div>
@@ -3736,6 +3748,21 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       righe.sort((a, b) => b.x - a.x);
       return { righe, daRileggere, senzaSolito, canali: nomi.size };
     }
+    // stessi filtri dell'elenco, ma dentro la scheda: titolo/canale, iscritti, uscito da quando, visualizzazioni e volte il solito
+    function filtroOutlierAttivo() { return !!($('of-testo').value.trim() || $('of-iscritti').value || $('of-uscito').value !== '0' || $('of-views').value !== '0' || $('of-solito').value !== '0'); }
+    function filtraOutlierCanali(righe) {
+      const testo = normalizzaTesto($('of-testo').value);
+      const [iMin, iMax] = $('of-iscritti').value ? $('of-iscritti').value.split('-').map(Number) : [null, null];
+      const giorni = +$('of-uscito').value || 0, minViews = +$('of-views').value || 0, minX = +$('of-solito').value || 0;
+      return righe.filter((r) => {
+        if (testo && !normalizzaTesto(r.o.t + ' ' + r.canale).includes(testo)) return false;
+        if (iMin != null && !(r.isc != null && r.isc >= iMin && r.isc < iMax)) return false;
+        if (giorni && Date.now() - new Date(r.o.d).getTime() > giorni * GIORNO) return false;
+        if (r.o.v < minViews) return false;
+        if (r.x < minX) return false;
+        return true;
+      });
+    }
     function aggiornaOutlierCanali() {
       const d = datiOutlierCanali();
       $('oc-conta').textContent = d.righe.length ? '(' + nf.format(d.righe.length) + ')' : '';
@@ -3743,10 +3770,15 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     }
     function disegnaOutlierCanali(d) {
       d = d || datiOutlierCanali();
-      const box = $('scheda-outlier');
+      const totale = d.righe.length;
+      const attivo = filtroOutlierAttivo();
+      if (attivo) d = Object.assign({}, d, { righe: filtraOutlierCanali(d.righe) });
+      const box = $('oc-contenuto');
       box.replaceChildren();
       const p = (testo, cls) => { const e = document.createElement('p'); e.className = cls || 'muted'; e.style.cssText = 'font-size:.9rem;margin:6px 0 12px'; e.textContent = testo; return e; };
-      box.append(p(d.righe.length
+      box.append(p(attivo && totale
+        ? nf.format(d.righe.length) + ' su ' + nf.format(totale) + ' video outlier rispettano i filtri.'
+        : d.righe.length
         ? nf.format(d.righe.length) + (d.righe.length === 1 ? ' video è un outlier' : ' video sono outlier') + ' negli ultimi 50 Shorts dei canali di questa ricerca (×' + OUTLIER_X + ' o più il solito del canale, almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' views). Qui ci sono anche video che non parlano di questo argomento: sono i colpi che quei canali hanno fatto altrove.'
         : 'Per ora non ho video outlier da mostrare per i canali di questa ricerca.', 'big-line'));
       if (d.daRileggere.length) {
@@ -3765,7 +3797,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         b.addEventListener('click', () => { impostaModoPG('solito'); $('pg-toggle').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
         r.append(b); box.append(r);
       }
-      if (!d.righe.length) return;
+      if (!d.righe.length) {
+        if (attivo && totale) box.append(p('Nessun video con questi filtri. Prova ad allargarli o premi "Togli i filtri".'));
+        return;
+      }
       const wrap = document.createElement('div'); wrap.className = 'table-box';
       const tab = document.createElement('table');
       const th = document.createElement('thead'), trh = document.createElement('tr');
@@ -3818,8 +3853,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       lavoroOC = false;
       ocMsg = errore ? 'Mi sono fermato: ' + errore : '';
       tabella();
-      if (tagliati && schedaElenco === 'outlier') $('scheda-outlier').prepend(Object.assign(document.createElement('p'), { className: 'muted', style: 'font-size:.9rem', textContent: 'Per ' + tagliati + ' canali non ho abbastanza crediti oggi: li leggo domani.' }));
+      if (tagliati && schedaElenco === 'outlier') $('oc-contenuto').prepend(Object.assign(document.createElement('p'), { className: 'muted', style: 'font-size:.9rem', textContent: 'Per ' + tagliati + ' canali non ho abbastanza crediti oggi: li leggo domani.' }));
     }
+    ['iscritti', 'uscito', 'views'].forEach((k) => { $('of-' + k).innerHTML = $('tf-' + k).innerHTML; $('of-' + k).value = $('tf-' + k).querySelector('option').value; });
+    const ridisegnaOC = () => { ocMax = ELENCO_PASSO; disegnaOutlierCanali(); };
+    ['of-iscritti', 'of-uscito', 'of-views', 'of-solito'].forEach((id) => $(id).addEventListener('change', ridisegnaOC));
+    $('of-testo').addEventListener('input', conCalma(ridisegnaOC));
+    $('of-reset').addEventListener('click', () => { $('of-testo').value = ''; ['of-iscritti', 'of-uscito', 'of-views', 'of-solito'].forEach((id) => { $(id).value = $(id).querySelector('option').value; }); ridisegnaOC(); });
     document.querySelectorAll('#elenco-schede [data-scheda]').forEach((b) => b.addEventListener('click', () => {
       schedaElenco = b.dataset.scheda;
       document.querySelectorAll('#elenco-schede [data-scheda]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.scheda === schedaElenco)));

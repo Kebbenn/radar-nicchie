@@ -1383,12 +1383,18 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             </div>
           </div>
           <p class="muted" style="font-size:.85rem">Il file si apre con Excel o Fogli Google. Premi i titoli delle colonne per ordinare.</p>
+          <div class="seg" id="elenco-schede" style="margin:6px 0 12px">
+            <button type="button" data-scheda="tutti" aria-pressed="true">Tutti gli Shorts</button>
+            <button type="button" data-scheda="outlier" aria-pressed="false">Outlier dei canali <span id="oc-conta"></span></button>
+          </div>
+          <div id="scheda-tutti">
           <div id="riepilogo-outlier" hidden></div>
           <div class="table-box">
             <table>
               <thead>
                 <tr>
                   <th>Video</th>
+                  <th class="r"><button type="button" data-sort="iscritti">Iscritti</button></th>
                   <th><button type="button" data-sort="data">Uscito</button></th>
                   <th class="r"><button type="button" data-sort="views">Visualizzazioni</button></th>
                   <th class="r"><button type="button" data-sort="vpd">Al giorno</button></th>
@@ -1401,6 +1407,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             </table>
           </div>
           <div id="elenco-altri" class="more" style="text-align:center;margin-top:14px"></div>
+          </div>
+          <div id="scheda-outlier" hidden></div>
         </section>
       </div>
     </div>
@@ -2106,20 +2114,23 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const salvate = baseSalvata();
         const ids = [...new Set(videoAttuali.map((v) => v.canaleId).filter((id) => id && /^UC[\w-]{22}$/.test(id)))];
         let nuovi = 0;
-        const nelDb = new Set();
+        const nelDb = new Set(), dbSenzaOutlier = new Set();
         for (let i = 0; i < ids.length; i += 100) {
           const parte = ids.slice(i, i + 100);
-          const r = await chiamaDb('/rest/v1/canali_solito?select=canale_id,solito,n,letto_il&canale_id=in.(' + parte.join(',') + ')', { method: 'GET' }, false);
+          const r = await chiamaDb('/rest/v1/canali_solito?select=canale_id,solito,n,letto_il,outlier&canale_id=in.(' + parte.join(',') + ')', { method: 'GET' }, false);
           (Array.isArray(r) ? r : []).forEach((x) => {
             const t = Date.parse(x.letto_il);
-            if (x.canale_id) nelDb.add(x.canale_id);
-            if (x.canale_id && t && !salvate[x.canale_id]) { salvate[x.canale_id] = { m: x.solito > 0 ? +x.solito : null, n: x.n || 0, t }; nuovi++; }
+            if (x.canale_id) { nelDb.add(x.canale_id); if (!Array.isArray(x.outlier)) dbSenzaOutlier.add(x.canale_id); }
+            const o = Array.isArray(x.outlier) ? x.outlier : undefined;
+            const loc = salvate[x.canale_id];
+            if (x.canale_id && t && !loc) { salvate[x.canale_id] = { m: x.solito > 0 ? +x.solito : null, n: x.n || 0, t, o }; nuovi++; }
+            else if (loc && loc.o === undefined && o) { loc.o = o; nuovi++; }
           });
         }
         if (nuovi) scrivi(K_BASE, salvate);
         // i canali che hai già letto qui ma che nel database mancano (anche da giorni) li copio lì: così li vede anche Radar Classifiche
         const daCopiare = {};
-        ids.forEach((id) => { if (!nelDb.has(id) && salvate[id]) daCopiare[id] = salvate[id]; });
+        ids.forEach((id) => { if (salvate[id] && (!nelDb.has(id) || (dbSenzaOutlier.has(id) && Array.isArray(salvate[id].o)))) daCopiare[id] = salvate[id]; });
         if (Object.keys(daCopiare).length) condividiLetti(daCopiare);
         return nuovi;
       })().catch(() => 0).finally(() => { condivisoInCorso = null; });
@@ -2129,7 +2140,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     async function condividiLetti(letti) {
       if (!dbConf || !dbSessione) return;
       const riga = Object.entries(letti).filter(([id, b]) => /^UC[\w-]{22}$/.test(id) && b && Date.now() - b.t < 29 * GIORNO)
-        .map(([id, b]) => ({ canale_id: id, solito: b.m > 0 ? b.m : null, n: Math.min(50, b.n || 0), letto_il: new Date(b.t).toISOString() }));
+        .map(([id, b]) => ({ canale_id: id, solito: b.m > 0 ? b.m : null, n: Math.min(50, b.n || 0), letto_il: new Date(b.t).toISOString(), outlier: Array.isArray(b.o) ? b.o : null }));
       for (let i = 0; i < riga.length; i += 100) {
         const corpo = JSON.stringify(riga.slice(i, i + 100));
         try { await chiamaDb('/rest/v1/canali_solito?on_conflict=canale_id', { method: 'POST', body: corpo, headers: { Prefer: 'resolution=merge-duplicates,return=minimal' } }, true); }
@@ -2150,18 +2161,23 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       if (!ids.length) {
         try { ids = await idsPlaylist('UU' + canaleId.slice(2), 50); controllaDurata = true; } catch (e) { if (/crediti|chiave|API/.test(e.message)) throw e; }
       }
-      if (!ids.length) return { m: null, n: 0, t: Date.now() };
+      if (!ids.length) return { m: null, n: 0, t: Date.now(), o: [] };
       const d = await chiama('videos', {
         part: 'snippet,statistics,contentDetails', id: ids.join(','),
-        fields: 'items(id,snippet/publishedAt,statistics/viewCount,contentDetails/duration)',
+        fields: 'items(id,snippet/publishedAt,snippet/title,statistics/viewCount,contentDetails/duration)',
       }, 1);
       const adesso = Date.now();
-      const views = (d.items || [])
+      const ok = (d.items || [])
         .filter((v) => v.statistics && v.statistics.viewCount != null)
         .filter((v) => { if (!controllaDurata) return true; const du = durataSecondi(v.contentDetails && v.contentDetails.duration); return du != null && du > 0 && du <= DURATA_MAX_SHORT; })
-        .filter((v) => (adesso - new Date(v.snippet.publishedAt).getTime()) / GIORNO >= RECENTE_MIN)
-        .map((v) => +v.statistics.viewCount);
-      return { m: views.length >= 5 ? mediana(views) : null, n: views.length, t: adesso };
+        .filter((v) => (adesso - new Date(v.snippet.publishedAt).getTime()) / GIORNO >= RECENTE_MIN);
+      const views = ok.map((v) => +v.statistics.viewCount);
+      const m = views.length >= 5 ? mediana(views) : null;
+      // i video che nel canale sono outlier (×5 il solito, almeno 40k views): li tengo, così si possono rivedere senza rileggere
+      const o = m > 0 ? ok.filter((v) => èOutlier(+v.statistics.viewCount / m, +v.statistics.viewCount, OUTLIER_X))
+        .sort((a, b) => b.statistics.viewCount / m - a.statistics.viewCount / m).slice(0, 10)
+        .map((v) => ({ i: v.id, t: String((v.snippet && v.snippet.title) || '').slice(0, 100), v: +v.statistics.viewCount, d: String(v.snippet.publishedAt).slice(0, 10) })) : [];
+      return { m, n: views.length, t: adesso, o };
     }
     async function avviaLetturaBase() {
       if (lavoroPG) return;
@@ -2182,7 +2198,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         while (coda.length && !errore) {
           const id = coda.shift();
           try { salvate[id] = letti[id] = await leggiBaseCanale(id); }
-          catch (e) { if (/crediti|chiave|API|collegarmi/.test(e.message)) errore = e.message; else salvate[id] = letti[id] = { m: null, n: 0, t: Date.now() }; }
+          catch (e) { if (/crediti|chiave|API|collegarmi/.test(e.message)) errore = e.message; else salvate[id] = letti[id] = { m: null, n: 0, t: Date.now(), o: [] }; }
           fatti++;
           testoEl.textContent = 'Leggo gli ultimi Shorts dei canali… ' + fatti + ' / ' + totale;
         }
@@ -3677,6 +3693,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         box.append(img, info);
         td0.append(box);
         const celle = [
+          [v.iscritti == null ? 'nascosti' : compatto(v.iscritti), 'r num'],
           [dataBreve(new Date(v.data)), ''],
           [compatto(v.views), 'r num'],
           [compatto(v.vpd), 'r num'],
@@ -3693,7 +3710,119 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       });
       aggiornaFiltroElenco(filtrati.length);
       riepilogoOutlier();
+      aggiornaOutlierCanali();
     }
+
+
+    // ---------- Elenco completo · scheda "Outlier dei canali": i video outlier tra gli ultimi 50 Shorts di ogni canale della ricerca ----------
+    let schedaElenco = 'tutti', ocMax = ELENCO_PASSO, lavoroOC = false, ocMsg = '';
+    function datiOutlierCanali() {
+      const salvate = baseSalvata();
+      const nomi = new Map(), iscritti = new Map();
+      videoAttuali.forEach((v) => { if (v.canaleId && !nomi.has(v.canaleId)) { nomi.set(v.canaleId, v.canale); iscritti.set(v.canaleId, v.iscritti); } });
+      const righe = [], daRileggere = [];
+      let senzaSolito = 0;
+      nomi.forEach((nome, id) => {
+        const e = salvate[id];
+        if (!e) { senzaSolito++; return; }
+        if (!(e.m > 0)) return;                                   // canale con troppo pochi Shorts: niente solito
+        if (!Array.isArray(e.o)) { daRileggere.push(id); return; }
+        e.o.forEach((o) => { const x = o.v / e.m; if (èOutlier(x, o.v, OUTLIER_X)) righe.push({ o, canale: nome, canaleId: id, sl: e.m, x, isc: iscritti.get(id) }); });
+      });
+      righe.sort((a, b) => b.x - a.x);
+      return { righe, daRileggere, senzaSolito, canali: nomi.size };
+    }
+    function aggiornaOutlierCanali() {
+      const d = datiOutlierCanali();
+      $('oc-conta').textContent = d.righe.length ? '(' + nf.format(d.righe.length) + ')' : '';
+      if (schedaElenco === 'outlier') disegnaOutlierCanali(d);
+    }
+    function disegnaOutlierCanali(d) {
+      d = d || datiOutlierCanali();
+      const box = $('scheda-outlier');
+      box.replaceChildren();
+      const p = (testo, cls) => { const e = document.createElement('p'); e.className = cls || 'muted'; e.style.cssText = 'font-size:.9rem;margin:6px 0 12px'; e.textContent = testo; return e; };
+      box.append(p(d.righe.length
+        ? nf.format(d.righe.length) + (d.righe.length === 1 ? ' video è un outlier' : ' video sono outlier') + ' negli ultimi 50 Shorts dei canali di questa ricerca (×' + OUTLIER_X + ' o più il solito del canale, almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' views). Qui ci sono anche video che non parlano di questo argomento: sono i colpi che quei canali hanno fatto altrove.'
+        : 'Per ora non ho video outlier da mostrare per i canali di questa ricerca.', 'big-line'));
+      if (d.daRileggere.length) {
+        const rimasti = Math.max(0, CREDITI_GIORNO - creditiUsati());
+        const riga = document.createElement('div'); riga.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 12px';
+        const t = p(lavoroOC ? ocMsg : 'Per ' + nf.format(d.daRileggere.length) + (d.daRileggere.length === 1 ? ' canale' : ' canali') + ' li avevo letti prima e non ho salvato i loro outlier. Rileggerli costa circa ' + nf.format(d.daRileggere.length * 2) + ' crediti (oggi ne restano ' + nf.format(rimasti) + '). Una volta letti, li vedi da qualsiasi dispositivo.');
+        t.style.margin = '0';
+        riga.append(t);
+        if (!lavoroOC) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-light'; b.id = 'oc-rileggi'; b.textContent = 'Rileggi ' + nf.format(d.daRileggere.length) + (d.daRileggere.length === 1 ? ' canale' : ' canali'); b.addEventListener('click', avviaLetturaOutlier); riga.append(b); }
+        box.append(riga);
+      }
+      if (d.senzaSolito) {
+        const r = document.createElement('p'); r.className = 'muted'; r.style.cssText = 'font-size:.9rem;margin:0 0 12px';
+        r.append(nf.format(d.senzaSolito) + (d.senzaSolito === 1 ? ' canale non è ancora stato letto. ' : ' canali non sono ancora stati letti. '));
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-link'; b.textContent = 'Vai alla sezione 6';
+        b.addEventListener('click', () => { impostaModoPG('solito'); $('pg-toggle').scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+        r.append(b); box.append(r);
+      }
+      if (!d.righe.length) return;
+      const wrap = document.createElement('div'); wrap.className = 'table-box';
+      const tab = document.createElement('table');
+      const th = document.createElement('thead'), trh = document.createElement('tr');
+      [['Video', ''], ['Iscritti', 'r'], ['Uscito', ''], ['Visualizzazioni', 'r'], ['Solito del canale', 'r'], ['× il solito', 'r']].forEach(([t, c]) => { const e = document.createElement('th'); e.textContent = t; if (c) e.className = c; trh.append(e); });
+      th.append(trh); tab.append(th);
+      const tb = document.createElement('tbody');
+      d.righe.slice(0, ocMax).forEach((r) => {
+        const tr = document.createElement('tr');
+        const td0 = document.createElement('td'), vid = document.createElement('div'); vid.className = 'vid';
+        const img = document.createElement('img'); img.src = 'https://i.ytimg.com/vi/' + encodeURIComponent(r.o.i) + '/mqdefault.jpg'; img.alt = ''; img.loading = 'lazy';
+        const info = document.createElement('div'); info.style.minWidth = '0';
+        const a = document.createElement('a'); a.href = linkVideo(r.o.i); a.target = '_blank'; a.rel = 'noopener'; a.textContent = r.o.t || r.o.i;
+        const sm = document.createElement('small'); sm.textContent = r.canale;
+        info.append(a, sm); vid.append(img, info); td0.append(vid); tr.append(td0);
+        [[r.isc == null ? 'nascosti' : compatto(r.isc), 'r num'], [dataBreve(new Date(r.o.d)), ''], [compatto(r.o.v), 'r num'], [compatto(r.sl), 'r num'], ['×' + nf1.format(r.x), 'r num']].forEach(([t, c]) => { const td = document.createElement('td'); td.className = c; td.textContent = t; tr.append(td); });
+        tb.append(tr);
+      });
+      tab.append(tb); wrap.append(tab); box.append(wrap);
+      if (d.righe.length > ocMax) {
+        const piu = document.createElement('div'); piu.className = 'more'; piu.style.cssText = 'text-align:center;margin-top:14px';
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-light'; b.id = 'oc-altri-btn'; b.textContent = 'Mostra altri ' + nf.format(Math.min(ELENCO_PASSO, d.righe.length - ocMax));
+        b.addEventListener('click', () => { ocMax += ELENCO_PASSO; disegnaOutlierCanali(); });
+        const inf = document.createElement('p'); inf.className = 'muted'; inf.style.cssText = 'font-size:.85rem;margin:8px 0 0'; inf.textContent = 'Ne vedi ' + nf.format(ocMax) + ' su ' + nf.format(d.righe.length);
+        piu.append(b, inf); box.append(piu);
+      }
+    }
+    async function avviaLetturaOutlier() {
+      if (lavoroOC || lavoroPG) return;
+      lavoroOC = true;
+      let coda = datiOutlierCanali().daRileggere;
+      const margine = Math.floor((CREDITI_GIORNO - creditiUsati() - 300) / 2);
+      const tagliati = Math.max(0, coda.length - Math.max(0, margine));
+      if (tagliati) coda = coda.slice(0, Math.max(0, margine));
+      const salvate = baseSalvata(), letti = {};
+      let fatti = 0, errore = '';
+      const totale = coda.length;
+      const aggiorna = () => { ocMsg = 'Rileggo gli ultimi Shorts dei canali… ' + fatti + ' / ' + totale; if (schedaElenco === 'outlier') disegnaOutlierCanali(); };
+      aggiorna();
+      const lavoratore = async () => {
+        while (coda.length && !errore) {
+          const id = coda.shift();
+          try { salvate[id] = letti[id] = await leggiBaseCanale(id); }
+          catch (e) { if (/crediti|chiave|API|collegarmi/.test(e.message)) errore = e.message; }
+          fatti++; aggiorna();
+        }
+      };
+      await Promise.all([lavoratore(), lavoratore(), lavoratore(), lavoratore()]);
+      scrivi(K_BASE, salvate);
+      await condividiLetti(letti);
+      lavoroOC = false;
+      ocMsg = errore ? 'Mi sono fermato: ' + errore : '';
+      tabella();
+      if (tagliati && schedaElenco === 'outlier') $('scheda-outlier').prepend(Object.assign(document.createElement('p'), { className: 'muted', style: 'font-size:.9rem', textContent: 'Per ' + tagliati + ' canali non ho abbastanza crediti oggi: li leggo domani.' }));
+    }
+    document.querySelectorAll('#elenco-schede [data-scheda]').forEach((b) => b.addEventListener('click', () => {
+      schedaElenco = b.dataset.scheda;
+      document.querySelectorAll('#elenco-schede [data-scheda]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.scheda === schedaElenco)));
+      $('scheda-tutti').hidden = schedaElenco !== 'tutti';
+      $('scheda-outlier').hidden = schedaElenco !== 'outlier';
+      if (schedaElenco === 'outlier') { ocMax = ELENCO_PASSO; disegnaOutlierCanali(); sincronizzaCondivisi().then((n) => { if (n) tabella(); }); }
+    }));
 
     // ---------- Archivio e download ----------
     function archivio() { const a = leggi(K_ARCHIVIO, []); return Array.isArray(a) ? a : []; }
@@ -3773,7 +3902,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const copia = $('results').firstElementChild.cloneNode(true);
       elencoMax = maxPrima; tabella();
       copia.querySelector('#save-bar').remove();
-      copia.querySelectorAll('#elenco-altri').forEach((n) => n.remove());
+      copia.querySelectorAll('#elenco-altri, #elenco-schede, #scheda-outlier').forEach((n) => n.remove());
+      const stt = copia.querySelector('#scheda-tutti'); if (stt) stt.hidden = false;
       copia.querySelectorAll('.actions, .table-head + p, #filtro-intro, #filtro-elenco, #tf-conta, .banner-azioni, #profondo-risultato, #riepilogo-outlier, tr.filtri-colonne').forEach((n) => n.remove());
       const vBox = copia.querySelector('#varianti-risultato');
       if (vBox && vBox.children.length) { const vBtn = copia.querySelector('#varianti-btn'); if (vBtn) vBtn.remove(); }

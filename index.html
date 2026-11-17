@@ -2139,8 +2139,12 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     // scrive nel database i canali appena letti (solo se hai fatto l'accesso; un dato già presente non viene toccato)
     async function condividiLetti(letti) {
       if (!dbConf || !dbSessione) return;
+      // dentro ogni video outlier metto anche nome e iscritti del canale, così chi legge dal database (Radar Classifiche) li mostra senza altre ricerche
+      const info = new Map();
+      videoAttuali.forEach((v) => { if (v.canaleId && !info.has(v.canaleId)) info.set(v.canaleId, { c: v.canale, s: v.iscritti }); });
+      const arricchisci = (id, o) => { const i = info.get(id); return Array.isArray(o) ? o.map((x) => (i ? Object.assign({}, x, { c: x.c || i.c, s: x.s !== undefined ? x.s : i.s }) : x)) : null; };
       const riga = Object.entries(letti).filter(([id, b]) => /^UC[\w-]{22}$/.test(id) && b && Date.now() - b.t < 29 * GIORNO)
-        .map(([id, b]) => ({ canale_id: id, solito: b.m > 0 ? b.m : null, n: Math.min(50, b.n || 0), letto_il: new Date(b.t).toISOString(), outlier: Array.isArray(b.o) ? b.o : null }));
+        .map(([id, b]) => ({ canale_id: id, solito: b.m > 0 ? b.m : null, n: Math.min(50, b.n || 0), letto_il: new Date(b.t).toISOString(), outlier: arricchisci(id, b.o) }));
       for (let i = 0; i < riga.length; i += 100) {
         const corpo = JSON.stringify(riga.slice(i, i + 100));
         try { await chiamaDb('/rest/v1/canali_solito?on_conflict=canale_id', { method: 'POST', body: corpo, headers: { Prefer: 'resolution=merge-duplicates,return=minimal' } }, true); }

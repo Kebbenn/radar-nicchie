@@ -4653,7 +4653,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       else if (!filtrate.length) ul.append(paragrafo('Nessuna ricerca rispetta questi filtri. Prova ad allargarli o premi "Togli i filtri".', 'muted'));
 
       // le preferite: sempre in cima, fuori dall'elenco e dai filtri
-      const pref = dbRighe.filter(ePreferita).sort((a, b) => new Date(b.creato) - new Date(a.creato));
+      const pref = dbRighe.filter((r) => ePreferita(r) && !eArchiviata(r)).sort((a, b) => new Date(b.creato) - new Date(a.creato));
       $('db-preferite').hidden = !dbRighe.length;
       $('db-pref-lista').replaceChildren(pref.length ? tabellaStorico(pref, false)
         : paragrafo('Nessuna preferita. Premi la stella ☆ accanto a una ricerca per metterla qui.', 'muted'));
@@ -4677,6 +4677,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     let archIds = [];
     const eArchiviata = (r) => archiviate.has(chiavePref(r));
     async function cambiaArchivio(r) {
+      // una ricerca sta in un posto solo: se la archivio, esce dalle preferite
+      if (!eArchiviata(r) && ePreferita(r)) await cambiaPreferita(r);
       const k = chiavePref(r);
       const prima = new Set(archiviate);
       if (archiviate.has(k)) archiviate.delete(k); else archiviate.add(k);
@@ -4697,6 +4699,8 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     const chiavePref = (r) => new Date(r.creato).getTime() + '|' + r.ricerca;   // resta uguale anche dopo la pulizia dei 30 giorni
     const ePreferita = (r) => preferite.has(chiavePref(r));
     async function cambiaPreferita(r) {
+      // se la segno con la stella mentre è nell'Archivio, torna fuori dall'archivio
+      if (!ePreferita(r) && eArchiviata(r)) await cambiaArchivio(r);
       const k = chiavePref(r);
       const prima = new Set(preferite);
       if (preferite.has(k)) preferite.delete(k); else preferite.add(k);

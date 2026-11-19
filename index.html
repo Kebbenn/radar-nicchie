@@ -427,6 +427,8 @@
       border: 1px solid color-mix(in srgb, #f5b301 45%, var(--line)); background: color-mix(in srgb, #f5b301 7%, var(--surface)); }
     .preferite[hidden] { display: none; }
     .preferite .label { color: #b77900; }
+    .preferite.archivio { border: 1px solid var(--line); background: color-mix(in srgb, var(--muted) 7%, var(--surface)); }
+    .preferite.archivio .label { color: var(--muted); }
     .preferite > * { min-width: 0; }
     .con-stella { display: flex; gap: 6px; align-items: flex-start; }
     .stella { background: none; padding: 0 2px; font-size: 1.15rem; line-height: 1.2; color: var(--muted); border-radius: 6px; flex-shrink: 0; }
@@ -884,6 +886,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           </div>
           <div id="db-pref-lista"></div>
         </section>
+        <section class="preferite archivio" id="db-archivio" hidden>
+          <div class="pref-head">
+            <span class="label">🗂 Archivio</span>
+            <p class="muted" id="db-arch-sub">Le ricerche che hai messo da parte con il tasto "Archivia". Non compaiono più nell'elenco qui sotto.</p>
+          </div>
+          <div id="db-arch-lista"></div>
+        </section>
         <div class="filters" id="db-filters">
           <label class="field grow"><span class="label">Cerca per nome</span>
             <input id="f-nome" type="search" placeholder="Es. pizza" autocomplete="off"></label>
@@ -891,27 +900,17 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             <select id="f-ordine">
               <option value="data">Più recenti</option>
               <option value="finale">Punteggio finale</option>
-              <option value="viral">Viralità</option>
-              <option value="opp">Opportunità</option>
-              <option value="rep">Replicabilità</option>
               <option value="piccolo">Canale piccolo (valore tipico)</option>
-              <option value="ripetuti">Canali con 3+ Shorts</option>
-              <option value="attivo">Il canale più attivo</option>
+              <option value="outlier">Outlier in questo argomento</option>
               <option value="shorts">Shorts trovati</option>
               <option value="canali">Canali diversi</option>
             </select></label>
           <label class="field"><span class="label">Punteggio finale</span>
             <select id="f-finale"><option value="0">Tutti</option><option value="35">35 o più</option><option value="50">50 o più</option><option value="65">65 o più</option></select></label>
-          <label class="field"><span class="label">Viralità</span>
-            <select id="f-viral"><option value="0">Tutti</option><option value="30">30 o più</option><option value="50">50 o più</option><option value="70">70 o più</option></select></label>
-          <label class="field"><span class="label">Opportunità</span>
-            <select id="f-opp"><option value="0">Tutti</option><option value="30">30 o più</option><option value="50">50 o più</option><option value="70">70 o più</option></select></label>
-          <label class="field"><span class="label">Replicabilità</span>
-            <select id="f-rep"><option value="0">Tutti</option><option value="30">30 o più</option><option value="50">50 o più</option><option value="70">70 o più</option></select></label>
           <label class="field"><span class="label">Un canale piccolo fa di solito</span>
             <select id="f-piccolo"><option value="0">Tutti</option><option value="1000">almeno 1k</option><option value="5000">almeno 5k</option><option value="10000">almeno 10k</option><option value="50000">almeno 50k</option><option value="100000">almeno 100k</option></select></label>
-          <label class="field"><span class="label">Canali con 3+ Shorts</span>
-            <select id="f-ripetuti"><option value="0">Tutti</option><option value="1">almeno 1</option><option value="3">almeno 3</option><option value="5">almeno 5</option><option value="10">almeno 10</option></select></label>
+          <label class="field"><span class="label">Outlier in questo argomento</span>
+            <select id="f-outlier"><option value="0">Tutti</option><option value="1">almeno 1</option><option value="3">almeno 3</option><option value="5">almeno 5</option><option value="10">almeno 10</option></select></label>
           <label class="field"><span class="label">Shorts trovati</span>
             <select id="f-shorts"><option value="0">Tutti</option><option value="50">almeno 50</option><option value="100">almeno 100</option><option value="200">almeno 200</option></select></label>
           <button class="btn-link" id="f-reset" type="button">Togli i filtri</button>
@@ -4523,7 +4522,12 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       video.forEach((v) => { const c = conta.get(v.canaleId) || { nome: v.canale, n: 0 }; c.n++; conta.set(v.canaleId, c); });
       const canali = [...conta.values()];
       const piuAttivo = canali.reduce((a, c) => (!a || c.n > a.n ? c : a), null);
+      const salvate = baseSalvata();
+      let noti = 0, nOut = 0;
+      video.forEach((v) => { const sl = solitoDi(v, salvate); if (sl > 0 && v.views > 0) { noti++; if (èOutlier(v.views / sl, v.views, OUTLIER_X)) nOut++; } });
       return {
+        v: 3,
+        outlier: { n: nOut, noti },
         shorts: video.length,
         canali: canali.length,
         piccolo: piccoli.length >= 5 ? { n: piccoli.length, basso: Math.round(percentile(piccoli, 0.25)),
@@ -4537,13 +4541,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const opp = calcolaOpportunita(videoAttuali);
       const rep = calcolaReplicabilita(videoAttuali);
       const vd = verdetto(viral.totale, opp.totale, rep.totale);
-      return Object.assign({ v: 2, viral: viral.totale, opp: opp.totale, rep: rep.totale,
+      return Object.assign({ v: 3, viral: viral.totale, opp: opp.totale, rep: rep.totale,
         finale: vd.finale, verdetto: vd.titolo, cls: vd.cls }, riassuntoDaVideo(videoAttuali));
     }
 
     // ---------- Pagina "Le tue ricerche": elenco con filtri ----------
     const K_FILTRI = 'radar-filtri-storico';
-    const FILTRI = ['f-nome', 'f-ordine', 'f-finale', 'f-viral', 'f-opp', 'f-rep', 'f-piccolo', 'f-ripetuti', 'f-shorts'];
+    const FILTRI = ['f-nome', 'f-ordine', 'f-finale', 'f-piccolo', 'f-outlier', 'f-shorts'];
     let dbRighe = [];
     let dbMostrate = 20;
     // I riassunti calcolati per le ricerche vecchie li tengo nel browser: così non riscarico i loro Shorts a ogni apertura
@@ -4559,18 +4563,22 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const tutte = await chiamaDb('/rest/v1/ricerche?select=id,creato,ricerca,impostazioni,riassunto&order=creato.desc&limit=1000', { method: 'GET' }, true);
         const diCanale = (r) => r.impostazioni && r.impostazioni.tipo === 'canale';
         const diPreferiti = (r) => r.impostazioni && r.impostazioni.tipo === 'preferiti';
+        const diArchivio = (r) => r.impostazioni && r.impostazioni.tipo === 'archivio';
         const pref = tutte.filter(diPreferiti).sort((a, b) => new Date(b.creato) - new Date(a.creato));
         prefIds = pref.map((r) => r.id);
         preferite = new Set(pref[0] && pref[0].riassunto && Array.isArray(pref[0].riassunto.chiavi) ? pref[0].riassunto.chiavi : []);
-        dbRighe = tutte.filter((r) => !diCanale(r) && !diPreferiti(r));
+        const arch = tutte.filter(diArchivio).sort((a, b) => new Date(b.creato) - new Date(a.creato));
+        archIds = arch.map((r) => r.id);
+        archiviate = new Set(arch[0] && arch[0].riassunto && Array.isArray(arch[0].riassunto.chiavi) ? arch[0].riassunto.chiavi : []);
+        dbRighe = tutte.filter((r) => !diCanale(r) && !diPreferiti(r) && !diArchivio(r));
         canaliDb = tutte.filter(diCanale);
         disegnaCanali();
         // le ricerche salvate prima di questa versione non hanno canali, canale piccolo e canali ripetuti: li calcolo dagli Shorts
         const salvati = leggi(K_RIASSUNTI, {}) || {};
-        const daCompletare = dbRighe.filter((r) => !(r.riassunto && r.riassunto.v >= 2) && !(r.impostazioni && r.impostazioni.scaduta));
-        daCompletare.forEach((r) => { if (salvati[r.id]) r.riassunto = Object.assign({}, r.riassunto || {}, salvati[r.id]); });
+        const daCompletare = dbRighe.filter((r) => !(r.riassunto && r.riassunto.v >= 3) && !(r.impostazioni && r.impostazioni.scaduta));
+        daCompletare.forEach((r) => { if (salvati[r.id] && salvati[r.id].outlier) r.riassunto = Object.assign({}, r.riassunto || {}, salvati[r.id]); });
         disegnaStorico();
-        const mancano = daCompletare.filter((r) => !salvati[r.id]).slice(0, 10);
+        const mancano = daCompletare.filter((r) => !salvati[r.id] || !salvati[r.id].outlier).slice(0, 10);
         if (mancano.length) {
           const conVideo = await chiamaDb('/rest/v1/ricerche?select=id,video&id=in.(' + mancano.map((r) => r.id).join(',') + ')', { method: 'GET' }, true);
           conVideo.forEach((x) => {
@@ -4603,31 +4611,30 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const minimo = (id) => +valoreFiltro(id) || 0;
       const ri = (r) => r.riassunto || {};
       const filtrate = dbRighe.filter((r) => {
+        if (eArchiviata(r)) return false;
         const x = ri(r);
         if (nome && !normalizzaTesto(r.ricerca).includes(nome)) return false;
         if (minimo('f-finale') && !((x.finale || 0) >= minimo('f-finale'))) return false;
-        if (minimo('f-viral') && !((x.viral || 0) >= minimo('f-viral'))) return false;
-        if (minimo('f-opp') && !((x.opp || 0) >= minimo('f-opp'))) return false;
-        if (minimo('f-rep') && !((x.rep || 0) >= minimo('f-rep'))) return false;
         if (minimo('f-piccolo') && !((x.piccolo && x.piccolo.tipico) >= minimo('f-piccolo'))) return false;
-        if (minimo('f-ripetuti') && !((x.ripetuti && x.ripetuti.tre) >= minimo('f-ripetuti'))) return false;
+        if (minimo('f-outlier') && !((x.outlier && x.outlier.n) >= minimo('f-outlier'))) return false;
         if (minimo('f-shorts') && !((x.shorts || 0) >= minimo('f-shorts'))) return false;
         return true;
       });
       const chiaviOrdine = {
-        data: (r) => new Date(r.creato).getTime(), finale: (r) => ri(r).finale, viral: (r) => ri(r).viral, opp: (r) => ri(r).opp,
-        rep: (r) => ri(r).rep, piccolo: (r) => ri(r).piccolo && ri(r).piccolo.tipico, ripetuti: (r) => ri(r).ripetuti && ri(r).ripetuti.tre,
-        shorts: (r) => ri(r).shorts, canali: (r) => ri(r).canali, attivo: (r) => ri(r).ripetuti && ri(r).ripetuti.max,
+        data: (r) => new Date(r.creato).getTime(), finale: (r) => ri(r).finale, piccolo: (r) => ri(r).piccolo && ri(r).piccolo.tipico,
+        outlier: (r) => ri(r).outlier && ri(r).outlier.noti ? ri(r).outlier.n : null, shorts: (r) => ri(r).shorts, canali: (r) => ri(r).canali,
       };
       const chiave = chiaviOrdine[valoreFiltro('f-ordine')] || chiaviOrdine.data;
       filtrate.sort((a, b) => (chiave(b) == null ? -1 : chiave(b)) - (chiave(a) == null ? -1 : chiave(a)));
 
       const filtriAttivi = FILTRI.some((id) => id !== 'f-ordine' && valoreFiltro(id) && valoreFiltro(id) !== '0');
+      const nAttive = dbRighe.filter((r) => !eArchiviata(r)).length;
       $('f-conteggio').textContent = dbRighe.length
-        ? (filtriAttivi ? filtrate.length + ' ricerche su ' + dbRighe.length + ' rispettano i filtri.' : dbRighe.length + (dbRighe.length === 1 ? ' ricerca salvata.' : ' ricerche salvate.'))
+        ? (filtriAttivi ? filtrate.length + ' ricerche su ' + nAttive + ' rispettano i filtri.' : nAttive + (nAttive === 1 ? ' ricerca salvata.' : ' ricerche salvate.'))
         : '';
       $('db-filters').hidden = !dbRighe.length;
       if (!dbRighe.length) ul.append(paragrafo('Ancora nessuna ricerca salvata. Fai una ricerca con "Analizza": la salvo qui da sola.', 'muted'));
+      else if (!nAttive) ul.append(paragrafo('Tutte le ricerche sono nell\'Archivio.', 'muted'));
       else if (!filtrate.length) ul.append(paragrafo('Nessuna ricerca rispetta questi filtri. Prova ad allargarli o premi "Togli i filtri".', 'muted'));
 
       // le preferite: sempre in cima, fuori dall'elenco e dai filtri
@@ -4636,13 +4643,38 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       $('db-pref-lista').replaceChildren(pref.length ? tabellaStorico(pref, false)
         : paragrafo('Nessuna preferita. Premi la stella ☆ accanto a una ricerca per metterla qui.', 'muted'));
 
+      // l'archivio: come le preferite, ma le ricerche messe qui escono dall'elenco
+      const arch = dbRighe.filter(eArchiviata).sort((a, b) => new Date(b.creato) - new Date(a.creato));
+      $('db-archivio').hidden = !dbRighe.length;
+      $('db-arch-lista').replaceChildren(arch.length ? tabellaStorico(arch, false)
+        : paragrafo('Archivio vuoto. Premi "Archivia" accanto a una ricerca per metterla qui.', 'muted'));
+
       if (!filtrate.length) return finePagina(filtrate);
       ul.append(tabellaStorico(filtrate.slice(0, dbMostrate), true));
-      ul.append(paragrafo('"Canali con 3+ Shorts" = quanti canali hanno pubblicato almeno 3 Shorts sullo stesso argomento, cioè ci hanno provato più volte. ' +
-        '"Il più attivo ne ha fatti" = quanti Shorts ha fatto il canale che ci ha provato di più. Premi il titolo di una colonna per ordinare. Premi ☆ per metterla tra le preferite.', 'muted legenda'));
+      ul.append(paragrafo('"Outlier" = video che hanno fatto almeno ' + OUTLIER_X + ' volte il solito del loro canale (e almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' visualizzazioni). Il numero dopo "su" sono gli Shorts di cui conosco il solito del canale. ' +
+        'Premi il titolo di una colonna per ordinare. Premi ☆ per metterla tra le preferite, "Archivia" per metterla da parte.', 'muted legenda'));
       finePagina(filtrate);
     }
 
+    // ----- Archivio: come le preferite, una piccola riga a parte nel database -----
+    let archiviate = new Set();
+    let archIds = [];
+    const eArchiviata = (r) => archiviate.has(chiavePref(r));
+    async function cambiaArchivio(r) {
+      const k = chiavePref(r);
+      const prima = new Set(archiviate);
+      if (archiviate.has(k)) archiviate.delete(k); else archiviate.add(k);
+      disegnaStorico();
+      try {
+        const nuova = await chiamaDb('/rest/v1/ricerche', { method: 'POST', headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({ ricerca: 'Archivio', impostazioni: { tipo: 'archivio' }, riassunto: { chiavi: [...archiviate] }, video: [] }) }, true);
+        for (const id of archIds) await chiamaDb('/rest/v1/ricerche?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }, true);
+        archIds = nuova && nuova[0] ? [nuova[0].id] : [];
+      } catch (e) {
+        archiviate = prima; disegnaStorico();
+        statoDb('Non sono riuscito a salvare l\'archivio: ' + e.message, 'error');
+      }
+    }
     // ----- Preferite: salvate nel database come una piccola riga a parte -----
     let preferite = new Set();
     let prefIds = [];
@@ -4672,14 +4704,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         ['Ricerca', 'data', 'Nome della ricerca e quando l\'hai fatta'],
         ['Risultato', null, ''],
         ['Punteggio', 'finale', 'Punteggio finale "Vale la pena?" da 0 a 100'],
-        ['Viralità', 'viral', 'Da 0 a 100: quanto l\'argomento sta crescendo adesso'],
-        ['Opportunità', 'opp', 'Da 0 a 100: quanto spazio c\'è per i canali piccoli'],
-        ['Replicabilità', 'rep', 'Da 0 a 100: quanto il successo si ripete'],
         ['Canale piccolo fa di solito', 'piccolo', 'Visualizzazioni che fa di solito uno Short di un canale sotto 10.000 iscritti (come nel grafico 4)'],
         ['Shorts trovati', 'shorts', 'Quanti Shorts ho trovato su questo argomento'],
         ['Canali diversi', 'canali', 'Quanti canali diversi hanno pubblicato questi Shorts'],
-        ['Canali con 3+ Shorts', 'ripetuti', 'Quanti canali hanno pubblicato almeno 3 Shorts su questo argomento (cioè ci hanno provato più volte)'],
-        ['Il più attivo ne ha fatti', 'attivo', 'Quanti Shorts su questo argomento ha pubblicato il canale che ne ha fatti di più'],
+        ['Outlier', 'outlier', 'Quanti video di questo argomento hanno fatto almeno ' + OUTLIER_X + ' volte il solito del loro canale (e almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' visualizzazioni)'],
         ['', null, ''],
       ];
       const ordineAttivo = valoreFiltro('f-ordine') || 'data';
@@ -4733,16 +4761,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         cella(tr, pl);
         const forte = (n) => { if (n == null) return null; const bb = document.createElement('b'); bb.textContent = n; return bb; };
         cella(tr, forte(x.finale), 'r num');
-        cella(tr, x.viral != null ? String(x.viral) : null, 'r num');
-        cella(tr, x.opp != null ? String(x.opp) : null, 'r num');
-        cella(tr, x.rep != null ? String(x.rep) : null, 'r num');
         cella(tr, x.piccolo ? compatto(x.piccolo.basso) + ' – ' + compatto(x.piccolo.alto) : null, 'r num',
           x.piccolo ? 'Di solito tra ' + compatto(x.piccolo.basso) + ' e ' + compatto(x.piccolo.alto) + ' visualizzazioni (su ' + x.piccolo.n + ' Shorts di canali sotto 10.000 iscritti)' : '');
         cella(tr, x.shorts != null ? nf.format(x.shorts) : null, 'r num');
         cella(tr, x.canali != null ? nf.format(x.canali) : null, 'r num');
-        cella(tr, x.ripetuti ? nf.format(x.ripetuti.tre) + (x.canali ? ' su ' + nf.format(x.canali) : '') : null, 'r num',
-          x.ripetuti ? x.ripetuti.tre + ' canali hanno pubblicato almeno 3 Shorts su questo argomento; ' + x.ripetuti.due + ' almeno 2.' : '');
-        cella(tr, x.ripetuti && x.ripetuti.max ? x.ripetuti.max + ' Shorts' : null, 'r num');
+        const o = x.outlier;
+        cella(tr, o && o.noti ? nf.format(o.n) + ' su ' + nf.format(o.noti) : null, 'r num',
+          o && o.noti ? o.n + ' video su ' + o.noti + ' (di cui conosco il solito del canale) sono outlier' : 'Non conosco ancora il solito dei canali di questa ricerca');
 
         const bx = document.createElement('div'); bx.className = 'azioni';
         const apri = document.createElement('button'); apri.type = 'button'; apri.className = 'btn-light';
@@ -4770,7 +4795,12 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             disegnaStorico();
           } catch (e) { statoDb(e.message, 'error'); }
         });
-        bx.append(apri, del);
+        const arc = document.createElement('button'); arc.type = 'button'; arc.className = 'btn-light';
+        const inArch = eArchiviata(r);
+        arc.textContent = inArch ? 'Rimetti' : 'Archivia';
+        arc.title = inArch ? 'Rimetti questa ricerca nell\'elenco' : 'Metti questa ricerca nell\'Archivio (esce dall\'elenco)';
+        arc.addEventListener('click', () => cambiaArchivio(r));
+        bx.append(apri, arc, del);
         cella(tr, bx);
         tbody.append(tr);
       });

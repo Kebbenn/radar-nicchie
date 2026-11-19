@@ -439,6 +439,9 @@
     .pa-box { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px; min-width: 0; }
     .pa-box > * { min-width: 0; }
     .pa-box p.muted { margin: 0 0 8px; }
+    .barra-canali { display: flex; width: 130px; height: 14px; border-radius: 6px; overflow: hidden; }
+    .barra-canali > div { height: 100%; }
+    .leg-canali { margin-top: 8px; }
     /* se le ricerche sono tante, il riquadro scorre e i titoli delle colonne restano in alto */
     .pa-box .storico-box { max-height: 420px; overflow: auto; }
     .pa-box table.storico th { position: sticky; top: 0; z-index: 3; box-shadow: 0 1px 0 var(--line); }
@@ -4539,10 +4542,11 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const piuAttivo = canali.reduce((a, c) => (!a || c.n > a.n ? c : a), null);
       const salvate = baseSalvata();
       let noti = 0, nOut = 0;
-      video.forEach((v) => { const sl = solitoDi(v, salvate); if (sl > 0 && v.views > 0) { noti++; if (èOutlier(v.views / sl, v.views, OUTLIER_X)) nOut++; } });
+      const tagli = [0, 0, 0, 0, 0];   // grandezza dei canali dei video outlier: sotto 10k, 10k–100k, 100k–1 Mln, oltre 1 Mln, iscritti nascosti
+      video.forEach((v) => { const sl = solitoDi(v, salvate); if (sl > 0 && v.views > 0) { noti++; if (èOutlier(v.views / sl, v.views, OUTLIER_X)) { nOut++; tagli[fasciaDi(v.iscritti)]++; } } });
       return {
-        v: 3,
-        outlier: { n: nOut, noti },
+        v: 4,
+        outlier: { n: nOut, noti, tagli },
         shorts: video.length,
         canali: canali.length,
         piccolo: piccoli.length >= 5 ? { n: piccoli.length, basso: Math.round(percentile(piccoli, 0.25)),
@@ -4556,7 +4560,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const opp = calcolaOpportunita(videoAttuali);
       const rep = calcolaReplicabilita(videoAttuali);
       const vd = verdetto(viral.totale, opp.totale, rep.totale);
-      return Object.assign({ v: 3, viral: viral.totale, opp: opp.totale, rep: rep.totale,
+      return Object.assign({ v: 4, viral: viral.totale, opp: opp.totale, rep: rep.totale,
         finale: vd.finale, verdetto: vd.titolo, cls: vd.cls }, riassuntoDaVideo(videoAttuali));
     }
 
@@ -4590,10 +4594,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         disegnaCanali();
         // le ricerche salvate prima di questa versione non hanno canali, canale piccolo e canali ripetuti: li calcolo dagli Shorts
         const salvati = leggi(K_RIASSUNTI, {}) || {};
-        const daCompletare = dbRighe.filter((r) => !(r.riassunto && r.riassunto.v >= 3) && !(r.impostazioni && r.impostazioni.scaduta));
-        daCompletare.forEach((r) => { if (salvati[r.id] && salvati[r.id].outlier) r.riassunto = Object.assign({}, r.riassunto || {}, salvati[r.id]); });
+        const daCompletare = dbRighe.filter((r) => !(r.riassunto && r.riassunto.v >= 4) && !(r.impostazioni && r.impostazioni.scaduta));
+        daCompletare.forEach((r) => { if (salvati[r.id] && salvati[r.id].outlier && salvati[r.id].outlier.tagli) r.riassunto = Object.assign({}, r.riassunto || {}, salvati[r.id]); });
         disegnaStorico();
-        const mancano = daCompletare.filter((r) => !salvati[r.id] || !salvati[r.id].outlier).slice(0, 10);
+        const mancano = daCompletare.filter((r) => !salvati[r.id] || !salvati[r.id].outlier || !salvati[r.id].outlier.tagli).slice(0, 10);
         if (mancano.length) {
           const conVideo = await chiamaDb('/rest/v1/ricerche?select=id,video&id=in.(' + mancano.map((r) => r.id).join(',') + ')', { method: 'GET' }, true);
           conVideo.forEach((x) => {
@@ -4667,6 +4671,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
       if (!filtrate.length) return finePagina(filtrate);
       ul.append(tabellaStorico(filtrate.slice(0, dbMostrate), true));
+      const legCanali = document.createElement('div'); legCanali.className = 'legend leg-canali';
+      legCanali.append('Canali degli outlier: ');
+      FASCE_CANALE.slice(0, 4).forEach((f) => { const sp = document.createElement('span'), ic = document.createElement('i'); ic.style.background = f.v; sp.append(ic, f.nome); legCanali.append(sp); });
+      ul.append(legCanali);
       ul.append(paragrafo('"Outlier" = video che hanno fatto almeno ' + OUTLIER_X + ' volte il solito del loro canale (e almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' visualizzazioni). Il numero dopo "su" sono gli Shorts di cui conosco il solito del canale. ' +
         'Premi il titolo di una colonna per ordinare. Premi ☆ per metterla tra le preferite, "Archivia" per metterla da parte.', 'muted legenda'));
       finePagina(filtrate);
@@ -4728,6 +4736,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         ['Shorts trovati', 'shorts', 'Quanti Shorts ho trovato su questo argomento'],
         ['Canali diversi', 'canali', 'Quanti canali diversi hanno pubblicato questi Shorts'],
         ['Outlier', 'outlier', 'Quanti video di questo argomento hanno fatto almeno ' + OUTLIER_X + ' volte il solito del loro canale (e almeno ' + compatto(OUTLIER_MIN_VIEWS) + ' visualizzazioni)'],
+        ['Canali degli outlier', null, 'Quanti iscritti hanno i canali dei video outlier: passa sopra la barra per vedere i numeri'],
         ['', null, ''],
       ];
       const ordineAttivo = valoreFiltro('f-ordine') || 'data';
@@ -4788,6 +4797,15 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         const o = x.outlier;
         cella(tr, o && o.noti ? nf.format(o.n) + ' su ' + nf.format(o.noti) : null, 'r num',
           o && o.noti ? o.n + ' video su ' + o.noti + ' (di cui conosco il solito del canale) sono outlier' : 'Non conosco ancora il solito dei canali di questa ricerca');
+        // barra con la grandezza dei canali dei video outlier (come nell'Elenco completo)
+        let barraCanali = null;
+        if (o && o.n && Array.isArray(o.tagli)) {
+          const tot = o.tagli.reduce((a, b) => a + b, 0) || 1;
+          barraCanali = document.createElement('div'); barraCanali.className = 'barra-canali';
+          barraCanali.title = FASCE_CANALE.map((f, i) => o.tagli[i] ? f.nome + ': ' + o.tagli[i] + ' (' + Math.round(o.tagli[i] / tot * 100) + '%)' : '').filter(Boolean).join('\n');
+          FASCE_CANALE.forEach((f, i) => { if (!o.tagli[i]) return; const d = document.createElement('div'); d.style.cssText = 'width:' + o.tagli[i] / tot * 100 + '%;background:' + f.v; barraCanali.append(d); });
+        }
+        cella(tr, barraCanali, '', barraCanali ? barraCanali.title : '');
 
         const bx = document.createElement('div'); bx.className = 'azioni';
         const apri = document.createElement('button'); apri.type = 'button'; apri.className = 'btn-light';

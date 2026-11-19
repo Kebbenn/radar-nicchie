@@ -1383,6 +1383,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
             </div>
           </div>
           <p class="muted" style="font-size:.85rem">Il file si apre con Excel o Fogli Google. Premi i titoli delle colonne per ordinare.</p>
+          <div id="el-toggle" style="margin:6px 0 4px">
+            <div class="seg"><button type="button" id="el-solito" aria-pressed="false">Confronta con il solito del canale</button></div>
+          </div>
+          <p class="muted" style="font-size:.85rem;margin:0 0 8px">Mostra quanti video sono outlier in questa ricerca (×5 o più il solito del canale) e filtra l'elenco.</p>
           <div class="seg" id="elenco-schede" style="margin:6px 0 12px">
             <button type="button" data-scheda="tutti" aria-pressed="true">Tutti gli Shorts</button>
             <button type="button" data-scheda="outlier" aria-pressed="false">Outlier dei canali <span id="oc-conta"></span></button>
@@ -2239,6 +2243,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     function disegnaPiccoliGrandi() {
       const box = $('chart-scatter-canali');
       document.querySelectorAll('#pg-toggle [data-pg]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pg === modoPG)));
+      const elb = $('el-solito'); if (elb) elb.setAttribute('aria-pressed', String(modoPG === 'solito'));
       const avvio = $('pg-avvio');
       if (modoPG === 'iscritti') {
         $('pg-titolo').textContent = 'Chi fa più visualizzazioni di quanti iscritti ha';
@@ -2333,6 +2338,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       }
     }
     document.querySelectorAll('#pg-toggle [data-pg]').forEach((b) => b.addEventListener('click', () => impostaModoPG(b.dataset.pg)));
+    $('el-solito').addEventListener('click', () => impostaModoPG(modoPG === 'solito' ? 'iscritti' : 'solito'));
     $('pg-avvia').addEventListener('click', avviaLetturaBase);
 
     // 9. Si sta saturando? Confronto gli ultimi 3 mesi con i 3 mesi prima (senza gli Shorts degli ultimi 7 giorni)
@@ -3984,7 +3990,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const copia = $('results').firstElementChild.cloneNode(true);
       elencoMax = maxPrima; tabella();
       copia.querySelector('#save-bar').remove();
-      copia.querySelectorAll('#elenco-altri, #elenco-schede, #scheda-outlier').forEach((n) => n.remove());
+      copia.querySelectorAll('#elenco-altri, #elenco-schede, #scheda-outlier, #el-toggle').forEach((n) => n.remove());
       const stt = copia.querySelector('#scheda-tutti'); if (stt) stt.hidden = false;
       copia.querySelectorAll('.actions, .table-head + p, #filtro-intro, #filtro-elenco, #tf-conta, .banner-azioni, #profondo-risultato, #riepilogo-outlier, tr.filtri-colonne').forEach((n) => n.remove());
       const vBox = copia.querySelector('#varianti-risultato');

@@ -427,14 +427,18 @@
       border: 1px solid color-mix(in srgb, #f5b301 45%, var(--line)); background: color-mix(in srgb, #f5b301 7%, var(--surface)); }
     .preferite[hidden] { display: none; }
     .preferite .label { color: #b77900; }
-    .preferite.archivio { border: 1px solid var(--line); background: color-mix(in srgb, var(--muted) 7%, var(--surface)); }
-    .preferite.archivio .label { color: var(--muted); }
-    .archivio summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-    .archivio summary::-webkit-details-marker { display: none; }
-    .archivio summary::before { content: '▸'; color: var(--muted); font-size: .9rem; transition: transform .15s; }
-    .archivio details[open] > summary::before { transform: rotate(90deg); }
-    .archivio details[open] > summary { margin-bottom: 8px; }
-    .preferite > * { min-width: 0; }
+    /* Preferite e Archivio: due schede sopra un solo riquadro */
+    .pa { display: grid; min-width: 0; justify-self: stretch; }
+    .pa[hidden] { display: none; }
+    .pa-tabs { display: flex; gap: 4px; padding-left: 12px; position: relative; z-index: 1; margin-bottom: -1px; }
+    .pa-tabs button { background: color-mix(in srgb, var(--muted) 8%, var(--surface)); color: var(--muted); border: 1px solid var(--line); border-bottom-color: var(--line);
+      border-radius: 10px 10px 0 0; padding: 8px 14px; font-weight: 600; font-size: .9rem; }
+    .pa-tabs button[aria-selected="true"] { background: var(--surface); color: var(--text, inherit); border-bottom-color: var(--surface); }
+    .pa-star { color: #f5b301; }
+    .pa-n { color: var(--muted); font-weight: 500; }
+    .pa-box { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px; min-width: 0; }
+    .pa-box > * { min-width: 0; }
+    .pa-box p.muted { margin: 0 0 8px; }
     .con-stella { display: flex; gap: 6px; align-items: flex-start; }
     .stella { background: none; padding: 0 2px; font-size: 1.15rem; line-height: 1.2; color: var(--muted); border-radius: 6px; flex-shrink: 0; }
     .stella[aria-pressed="true"] { color: #f5b301; }
@@ -884,21 +888,21 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <label class="check"><input type="checkbox" id="db-auto" checked> Salva automaticamente ogni ricerca</label>
           <button class="btn-link" id="db-logout" type="button">Esci</button>
         </div>
-        <section class="preferite" id="db-preferite" hidden>
-          <div class="pref-head">
-            <span class="label">★ Preferite</span>
-            <p class="muted" id="db-pref-sub">Le ricerche che hai segnato con la stella. Le vedi sempre qui in cima, anche con i filtri.</p>
+        <section class="pa" id="db-preferite" hidden>
+          <div class="pa-tabs" role="tablist">
+            <button type="button" role="tab" id="pa-tab-pref" data-pa="pref" aria-selected="true"><span class="pa-star">★</span> Preferite <span class="pa-n" id="pa-n-pref"></span></button>
+            <button type="button" role="tab" id="pa-tab-arch" data-pa="arch" aria-selected="false">🗂 Archivio <span class="pa-n" id="pa-n-arch"></span></button>
           </div>
-          <div id="db-pref-lista"></div>
-        </section>
-        <section class="preferite archivio" id="db-archivio" hidden>
-          <details id="db-arch-det">
-            <summary><span class="label" id="db-arch-titolo">🗂 Archivio</span></summary>
-            <div class="pref-head">
-              <p class="muted" id="db-arch-sub">Le ricerche che hai messo da parte con il tasto "Archivia". Non compaiono più nell'elenco qui sotto.</p>
+          <div class="pa-box">
+            <div id="pa-pref" role="tabpanel">
+              <p class="muted" id="db-pref-sub">Le ricerche che hai segnato con la stella. Le vedi sempre qui in cima, anche con i filtri.</p>
+              <div id="db-pref-lista"></div>
             </div>
-            <div id="db-arch-lista"></div>
-          </details>
+            <div id="pa-arch" role="tabpanel" hidden>
+              <p class="muted" id="db-arch-sub">Le ricerche che hai messo da parte con il tasto "Archivia". Non compaiono più nell'elenco qui sotto.</p>
+              <div id="db-arch-lista"></div>
+            </div>
+          </div>
         </section>
         <div class="filters" id="db-filters">
           <label class="field grow"><span class="label">Cerca per nome</span>
@@ -4652,10 +4656,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
 
       // l'archivio: come le preferite, ma le ricerche messe qui escono dall'elenco
       const arch = dbRighe.filter(eArchiviata).sort((a, b) => new Date(b.creato) - new Date(a.creato));
-      $('db-archivio').hidden = !dbRighe.length;
-      $('db-arch-titolo').textContent = '🗂 Archivio' + (arch.length ? ' (' + arch.length + ')' : '');
       $('db-arch-lista').replaceChildren(arch.length ? tabellaStorico(arch, false)
         : paragrafo('Archivio vuoto. Premi "Archivia" accanto a una ricerca per metterla qui.', 'muted'));
+      $('pa-n-pref').textContent = pref.length ? '(' + pref.length + ')' : '';
+      $('pa-n-arch').textContent = arch.length ? '(' + arch.length + ')' : '';
 
       if (!filtrate.length) return finePagina(filtrate);
       ul.append(tabellaStorico(filtrate.slice(0, dbMostrate), true));
@@ -4950,6 +4954,10 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
     });
     $('db-save').addEventListener('click', salvaInDb);
     $('db-more').addEventListener('click', () => { dbMostrate += 20; disegnaStorico(); });
+    document.querySelectorAll('#db-preferite [data-pa]').forEach((b) => b.addEventListener('click', () => {
+      document.querySelectorAll('#db-preferite [data-pa]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));
+      $('pa-pref').hidden = b.dataset.pa !== 'pref'; $('pa-arch').hidden = b.dataset.pa !== 'arch';
+    }));
     $('db-copy-sql2').addEventListener('click', async () => {
       const b = $('db-copy-sql2');
       try { await navigator.clipboard.writeText($('db-sql').textContent); b.textContent = 'Copiato ✓'; }

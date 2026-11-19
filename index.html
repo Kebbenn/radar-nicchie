@@ -429,6 +429,11 @@
     .preferite .label { color: #b77900; }
     .preferite.archivio { border: 1px solid var(--line); background: color-mix(in srgb, var(--muted) 7%, var(--surface)); }
     .preferite.archivio .label { color: var(--muted); }
+    .archivio summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+    .archivio summary::-webkit-details-marker { display: none; }
+    .archivio summary::before { content: '▸'; color: var(--muted); font-size: .9rem; transition: transform .15s; }
+    .archivio details[open] > summary::before { transform: rotate(90deg); }
+    .archivio details[open] > summary { margin-bottom: 8px; }
     .preferite > * { min-width: 0; }
     .con-stella { display: flex; gap: 6px; align-items: flex-start; }
     .stella { background: none; padding: 0 2px; font-size: 1.15rem; line-height: 1.2; color: var(--muted); border-radius: 6px; flex-shrink: 0; }
@@ -887,11 +892,13 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           <div id="db-pref-lista"></div>
         </section>
         <section class="preferite archivio" id="db-archivio" hidden>
-          <div class="pref-head">
-            <span class="label">🗂 Archivio</span>
-            <p class="muted" id="db-arch-sub">Le ricerche che hai messo da parte con il tasto "Archivia". Non compaiono più nell'elenco qui sotto.</p>
-          </div>
-          <div id="db-arch-lista"></div>
+          <details id="db-arch-det">
+            <summary><span class="label" id="db-arch-titolo">🗂 Archivio</span></summary>
+            <div class="pref-head">
+              <p class="muted" id="db-arch-sub">Le ricerche che hai messo da parte con il tasto "Archivia". Non compaiono più nell'elenco qui sotto.</p>
+            </div>
+            <div id="db-arch-lista"></div>
+          </details>
         </section>
         <div class="filters" id="db-filters">
           <label class="field grow"><span class="label">Cerca per nome</span>
@@ -4646,6 +4653,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       // l'archivio: come le preferite, ma le ricerche messe qui escono dall'elenco
       const arch = dbRighe.filter(eArchiviata).sort((a, b) => new Date(b.creato) - new Date(a.creato));
       $('db-archivio').hidden = !dbRighe.length;
+      $('db-arch-titolo').textContent = '🗂 Archivio' + (arch.length ? ' (' + arch.length + ')' : '');
       $('db-arch-lista').replaceChildren(arch.length ? tabellaStorico(arch, false)
         : paragrafo('Archivio vuoto. Premi "Archivia" accanto a una ricerca per metterla qui.', 'muted'));
 

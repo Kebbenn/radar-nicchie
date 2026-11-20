@@ -1405,9 +1405,9 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           </div>
           <p class="muted" style="font-size:.85rem">Il file si apre con Excel o Fogli Google. Premi i titoli delle colonne per ordinare.</p>
           <div id="el-toggle" style="margin:6px 0 4px">
-            <div class="seg"><button type="button" id="el-solito" aria-pressed="false">Confronta con il solito del canale</button></div>
+            <div class="seg"><button type="button" id="el-solito" aria-pressed="false">Leggi gli ultimi 50 Shorts dei canali</button></div>
           </div>
-          <p class="muted" style="font-size:.85rem;margin:0 0 8px">Mostra quanti video sono outlier in questa ricerca (×5 o più il solito del canale) e filtra l'elenco.</p>
+          <p class="muted" id="el-stato" style="font-size:.85rem;margin:0 0 8px">Leggo gli ultimi 50 Shorts dei canali di questa ricerca, poi mostro quanti video sono outlier (×5 o più il solito del canale) e filtro l'elenco.</p>
           <div class="seg" id="elenco-schede" style="margin:6px 0 12px">
             <button type="button" data-scheda="tutti" aria-pressed="true">Tutti gli Shorts</button>
             <button type="button" data-scheda="outlier" aria-pressed="false">Outlier dei canali <span id="oc-conta"></span></button>
@@ -2221,12 +2221,31 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
         .map((v) => ({ i: v.id, t: String((v.snippet && v.snippet.title) || '').slice(0, 100), v: +v.statistics.viewCount, d: String(v.snippet.publishedAt).slice(0, 10) })) : [];
       return { m, n: views.length, t: adesso, o };
     }
+    const firmaRicerca = () => videoAttuali.length + '|' + (videoAttuali[0] ? videoAttuali[0].id : '');
+    // sotto il tasto dell'Elenco completo: quanti canali leggo e quanto costa (finché non c'è un messaggio della lettura)
+    function aggiornaElStato() {
+      const e = $('el-stato');
+      if (!e || lavoroPG) return;
+      if (e.dataset.fisso === '1' && e.dataset.firma === firmaRicerca()) return;
+      e.dataset.fisso = '';
+      const da = canaliDaLeggere();
+      e.textContent = da.length
+        ? 'Leggo gli ultimi 50 Shorts di ' + nf.format(da.length) + (da.length === 1 ? ' canale' : ' canali') + ' (circa ' + nf.format(da.length * 2) + ' crediti, oggi ne restano ' + nf.format(Math.max(0, CREDITI_GIORNO - creditiUsati())) + '), poi mostro quanti video sono outlier (×' + OUTLIER_X + ' o più il solito del canale) e filtro l\'elenco.'
+        : 'Ho già letto tutti i canali di questa ricerca: il tasto mostra subito quanti video sono outlier (×' + OUTLIER_X + ' o più il solito del canale) e filtra l\'elenco.';
+    }
+    async function leggiDaElenco() {
+      if (lavoroPG) return;
+      await avviaLetturaBase();
+      await impostaModoPG('solito');
+    }
     async function avviaLetturaBase() {
       if (lavoroPG) return;
       lavoroPG = true;
-      const btn = $('pg-avvia'), testoEl = $('pg-avvio-testo');
-      btn.disabled = true;
-      $('pg-avvio-testo').textContent = 'Controllo i canali già letti nel database…';
+      const btn = $('pg-avvia'), testoEl = $('pg-avvio-testo'), btnEl = $('el-solito'), statoEl = $('el-stato');
+      // i messaggi compaiono sia nella sezione 6 sia sotto il tasto dell'Elenco completo
+      const dire = (t) => { testoEl.textContent = t; statoEl.textContent = t; statoEl.dataset.fisso = '1'; statoEl.dataset.firma = firmaRicerca(); };
+      btn.disabled = true; btnEl.disabled = true;
+      dire('Controllo i canali già letti nel database…');
       await sincronizzaCondivisi();
       let coda = canaliDaLeggere();
       const margine = Math.floor((CREDITI_GIORNO - creditiUsati() - 300) / 2);
@@ -2242,29 +2261,31 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
           try { salvate[id] = letti[id] = await leggiBaseCanale(id); }
           catch (e) { if (/crediti|chiave|API|collegarmi/.test(e.message)) errore = e.message; else salvate[id] = letti[id] = { m: null, n: 0, t: Date.now(), o: [] }; }
           fatti++;
-          testoEl.textContent = 'Leggo gli ultimi Shorts dei canali… ' + fatti + ' / ' + totale;
+          dire('Leggo gli ultimi Shorts dei canali… ' + fatti + ' / ' + totale);
         }
       };
-      testoEl.textContent = 'Leggo gli ultimi Shorts dei canali… 0 / ' + totale;
+      dire('Leggo gli ultimi Shorts dei canali… 0 / ' + totale);
       await Promise.all([lavoratore(), lavoratore(), lavoratore(), lavoratore()]);
       scrivi(K_BASE, salvate);
       condividiLetti(letti);
       videoAttuali.forEach((v) => { const r = solitoDi(v, salvate); if (r != null) v.solito = r; });   // il "solito" resta scritto dentro ogni video
       lavoroPG = false;
-      btn.disabled = false;
-      if (errore) testoEl.textContent = 'Mi sono fermato: ' + errore;
-      else if (tagliati) testoEl.textContent = 'Ho letto ' + totale + ' canali. Per ' + tagliati + ' non ho abbastanza crediti oggi: li leggo domani.';
+      btn.disabled = false; btnEl.disabled = false;
+      if (errore) dire('Mi sono fermato: ' + errore);
+      else if (tagliati) dire('Ho letto ' + totale + ' canali. Per ' + tagliati + ' non ho abbastanza crediti oggi: li leggo domani.');
+      else dire('Ho letto ' + nf.format(totale) + (totale === 1 ? ' canale.' : ' canali.'));
       disegnaPiccoliGrandi();
       // se la ricerca era già nel database online, la salvo di nuovo: così il "solito" resta con lei, anche da un altro dispositivo
       if (dbSessione && dbSalvataId && dbSalvataId !== 'ok' && totale && !errore) {
         await salvaInDb();
-        testoEl.textContent = (tagliati ? testoEl.textContent + ' ' : '') + 'Il "solito" dei canali è stato salvato insieme alla ricerca.';
+        dire((tagliati ? testoEl.textContent + ' ' : '') + 'Il "solito" dei canali è stato salvato insieme alla ricerca.');
       }
     }
     function disegnaPiccoliGrandi() {
       const box = $('chart-scatter-canali');
       document.querySelectorAll('#pg-toggle [data-pg]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pg === modoPG)));
       const elb = $('el-solito'); if (elb) elb.setAttribute('aria-pressed', String(modoPG === 'solito'));
+      aggiornaElStato();
       const avvio = $('pg-avvio');
       if (modoPG === 'iscritti') {
         $('pg-titolo').textContent = 'Chi fa più visualizzazioni di quanti iscritti ha';
@@ -2359,7 +2380,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       }
     }
     document.querySelectorAll('#pg-toggle [data-pg]').forEach((b) => b.addEventListener('click', () => impostaModoPG(b.dataset.pg)));
-    $('el-solito').addEventListener('click', () => impostaModoPG(modoPG === 'solito' ? 'iscritti' : 'solito'));
+    $('el-solito').addEventListener('click', leggiDaElenco);
     $('pg-avvia').addEventListener('click', avviaLetturaBase);
 
     // 9. Si sta saturando? Confronto gli ultimi 3 mesi con i 3 mesi prima (senza gli Shorts degli ultimi 7 giorni)
@@ -4011,7 +4032,7 @@ create index if not exists ricerche_utente_data on public.ricerche (user_id, cre
       const copia = $('results').firstElementChild.cloneNode(true);
       elencoMax = maxPrima; tabella();
       copia.querySelector('#save-bar').remove();
-      copia.querySelectorAll('#elenco-altri, #elenco-schede, #scheda-outlier, #el-toggle').forEach((n) => n.remove());
+      copia.querySelectorAll('#elenco-altri, #elenco-schede, #scheda-outlier, #el-toggle, #el-stato').forEach((n) => n.remove());
       const stt = copia.querySelector('#scheda-tutti'); if (stt) stt.hidden = false;
       copia.querySelectorAll('.actions, .table-head + p, #filtro-intro, #filtro-elenco, #tf-conta, .banner-azioni, #profondo-risultato, #riepilogo-outlier, tr.filtri-colonne').forEach((n) => n.remove());
       const vBox = copia.querySelector('#varianti-risultato');
